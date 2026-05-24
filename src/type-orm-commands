@@ -1,0 +1,5 @@
+//genera los entities directamente de la base de datos a una carpeta output
+typeorm-model-generator -h localhost -d sistem19_bdpiav105 -p 5432 -u sistem19 -x I4X7k33fpc -e postgres
+
+//Generar recursos: entity, dto, controller, module and service
+nest g resource [nombre]
