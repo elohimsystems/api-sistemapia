@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_ENV: production
 
     steps:
       - uses: actions/checkout@v4
@@ -23,11 +24,10 @@ jobs:
 
       - name: Prepare deploy package
         run: |
-          ls -la build/ 2>/dev/null || echo "build/ empty or missing"
           mkdir -p deploy-package
           cp -r build/. deploy-package/ 2>/dev/null || true
-          cp package.json package-lock.json deploy-package/ 2>/dev/null || true
-          ls -la deploy-package/
+          cp node_modules/.package-lock.json deploy-package/ 2>/dev/null || true
+          rsync -a node_modules/ deploy-package/node_modules/
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -38,3 +38,6 @@ jobs:
           local-dir: ./deploy-package/
           server-dir: ./
           delete-removed: true
+          exclude: |
+            **/.git*
+            **/.git*/**
