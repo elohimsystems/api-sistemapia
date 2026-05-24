@@ -36,4 +36,5 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./deploy-package/
-          server-dir: ${{ secrets.FTP_API_DIR }}
+          server-dir: ./
+          delete-removed: true
