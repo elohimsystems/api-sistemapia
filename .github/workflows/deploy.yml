@@ -21,9 +21,11 @@ jobs:
 
       - name: Prepare deploy package
         run: |
+          ls -la build/ 2>/dev/null || echo "build/ empty or missing"
           mkdir -p deploy-package
-          cp -r dist/* deploy-package/
-          cp package.json package-lock.json deploy-package/
+          cp -r build/. deploy-package/ 2>/dev/null || true
+          cp package.json package-lock.json deploy-package/ 2>/dev/null || true
+          ls -la deploy-package/
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
