@@ -44,8 +44,8 @@ jobs:
             set net:max-retries 3;
             mirror -R --delete --verbose \
               --exclude .git \
-              ./deploy-package/ ${{ secrets.FTP_API_DIR }};
-            put -O ${{ secrets.FTP_API_DIR }} node_modules.zip;
+              ./deploy-package/ ./;
+            put -O ./ node_modules.zip;
             quit
           "
           echo ""
