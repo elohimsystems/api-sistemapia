@@ -24,19 +24,18 @@ jobs:
       - name: Prepare deploy package
         run: |
           mkdir -p deploy-package
-          cp -r build/. deploy-package/ 2>/dev/null || true
-          cp node_modules/.package-lock.json deploy-package/ 2>/dev/null || true
+          cp -r build/. deploy-package/
+          cp package.json package-lock.json deploy-package/
           rsync -a node_modules/ deploy-package/node_modules/
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deploy-package/
-          server-dir: ./
-          delete-removed: true
-          exclude: |
-            **/.git*
-            **/.git*/**
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+          lftp -e "
+            set ftp:ssl-allow true;
+            set net:max-retries 3;
+            mirror -R --delete --verbose \
+              ./deploy-package/ ./;
+            quit
+          " -u "${{ secrets.FTP_USERNAME }}","${{ secrets.FTP_PASSWORD }}" \
+            ${{ secrets.FTP_HOST }}
