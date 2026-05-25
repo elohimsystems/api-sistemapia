@@ -7,8 +7,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
@@ -47,13 +45,13 @@ jobs:
             mirror -R --delete --verbose \
               --exclude .git \
               ./deploy-package/ ./;
+            put -O ./ node_modules.zip;
             quit
           "
           echo ""
           echo "=================================================="
-          echo "  build/ subido por FTP."
-          echo "  Descarga el artifact 'node_modules.zip' y"
-          echo "  extraelo en cPanel File Manager en:"
-          echo "  /home/sistem19/public_html/dev.api-sistemapia.com.ve/"
+          echo "  Todo subido por FTP."
+          echo "  Extrae node_modules.zip en cPanel File Manager"
+          echo "  en /home/sistem19/public_html/dev.api-sistemapia.com.ve/"
           echo "  Luego reinicia la Node.js App."
           echo "=================================================="
