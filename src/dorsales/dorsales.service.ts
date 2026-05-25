@@ -100,7 +100,7 @@ export class DorsalesService {
     return this.baseImagenRepo.save(img);
   }
 
-  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'Arial', fontColor: '#000000' };
+  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
 
   private getFieldConfig(
     baseImg: DorsalBaseImagen,
@@ -121,7 +121,7 @@ export class DorsalesService {
     await this.imagenRepo.delete({ idevento });
 
     const config = await this.configRepo.findOne({ where: { idevento } });
-    const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'Arial', fontColor: '#000000' };
+    const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
 
     const inscritos = await this.inscritoRepo.find({
       where: { evento: { id: idevento } },

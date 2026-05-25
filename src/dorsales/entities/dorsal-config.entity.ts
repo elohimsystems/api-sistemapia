@@ -17,7 +17,7 @@ export class DorsalConfig {
   @Column('integer', { name: 'font_size', default: 72 })
   fontSize: number;
 
-  @Column('character varying', { name: 'font_family', length: 100, default: 'Arial' })
+  @Column('character varying', { name: 'font_family', length: 100, default: 'sans-serif' })
   fontFamily: string;
 
   @Column('character varying', { name: 'font_color', length: 20, default: '#000000' })
