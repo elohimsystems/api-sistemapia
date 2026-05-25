@@ -21,19 +21,20 @@ jobs:
 
       - run: npm run build
 
-      - name: Package deploy
+      - name: Package for FTP
         run: |
           mkdir -p deploy-package
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
-          rsync -a node_modules/ deploy-package/node_modules/
-          cd deploy-package
-          zip -r ../deploy.zip .
+
+      - name: Package node_modules
+        run: |
+          zip -r node_modules.zip node_modules/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: api-deploy
-          path: deploy.zip
+          name: node_modules
+          path: node_modules.zip
 
       - name: Deploy via FTP
         run: |
@@ -44,16 +45,15 @@ jobs:
             set ftp:passive-mode on;
             set net:max-retries 3;
             mirror -R --delete --verbose \
-              --exclude node_modules/ \
               --exclude .git \
               ./deploy-package/ ./;
             quit
           "
           echo ""
           echo "=================================================="
-          echo "  node_modules/ no se pudo subir por FTP."
-          echo "  Descarga el artifact 'api-deploy.zip' de este"
-          echo "  Action, extraelo en cPanel File Manager en:"
+          echo "  build/ subido por FTP."
+          echo "  Descarga el artifact 'node_modules.zip' y"
+          echo "  extraelo en cPanel File Manager en:"
           echo "  /home/sistem19/public_html/dev.api-sistemapia.com.ve/"
           echo "  Luego reinicia la Node.js App."
           echo "=================================================="
