@@ -5,7 +5,7 @@ on:
     branches: [main, master]
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,12 +21,19 @@ jobs:
 
       - run: npm run build
 
-      - name: Prepare deploy package
+      - name: Package deploy
         run: |
           mkdir -p deploy-package
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
           rsync -a node_modules/ deploy-package/node_modules/
+          cd deploy-package
+          zip -r ../deploy.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-deploy
+          path: deploy.zip
 
       - name: Deploy via FTP
         run: |
