@@ -8,11 +8,14 @@ import { DorsalConfig, DorsalImagen, DorsalBaseImagen } from './entities';
 import { CreateDorsalConfigDto } from './dto/create-dorsal-config.dto';
 import { Inscrito } from '../inscritos/entities/inscrito.entity';
 
+const opentype = require('opentype.js');
+const wawoff2 = require('wawoff2');
+
 @Injectable()
 export class DorsalesService {
   private readonly uploadDir: string;
   private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
-  private fontDataUri: string = '';
+  private font: any = null;
 
   constructor(
     @InjectRepository(DorsalConfig)
@@ -30,17 +33,83 @@ export class DorsalesService {
   }
 
   private cargarFont() {
-    try {
-      const fontPath = join(__dirname, '..', '..', 'node_modules', '@fontsource', 'dejavu-sans', 'files', 'dejavu-sans-latin-400-normal.woff2');
-      const fontBuf = readFileSync(fontPath);
-      this.fontDataUri = 'data:font/woff2;base64,' + fontBuf.toString('base64');
-    } catch {
-      try {
-        const fontPath = join(process.cwd(), 'node_modules', '@fontsource', 'dejavu-sans', 'files', 'dejavu-sans-latin-400-normal.woff2');
-        const fontBuf = readFileSync(fontPath);
-        this.fontDataUri = 'data:font/woff2;base64,' + fontBuf.toString('base64');
-      } catch {}
+    const load = async () => {
+      for (const p of [
+        join(__dirname, '..', '..', 'node_modules', '@fontsource', 'roboto', 'files', 'roboto-latin-400-normal.woff2'),
+        join(process.cwd(), 'node_modules', '@fontsource', 'roboto', 'files', 'roboto-latin-400-normal.woff2'),
+      ]) {
+        try {
+          const compressed = readFileSync(p);
+          const decompressed = await wawoff2.decompress(compressed);
+          this.font = opentype.parse(decompressed);
+          return;
+        } catch {}
+      }
+    };
+    load().catch(() => {});
+  }
+
+  private textToSvgPath(text: string, x: number, y: number, fontSize: number, fontColor: string): string {
+    if (!this.font) {
+      return `<text x="${x}" y="${y}" font-size="${fontSize}" font-family="sans-serif" fill="${fontColor}" text-anchor="middle">${this.escapeXml(text)}</text>`;
     }
+
+    const scale = (1 / this.font.unitsPerEm) * fontSize;
+    const glyphs: any[] = [];
+    let totalWidth = 0;
+    for (const ch of text) {
+      const g = this.font.charToGlyph(ch);
+      glyphs.push(g);
+      if (g.advanceWidth) totalWidth += g.advanceWidth * scale;
+    }
+
+    let cursorX = x - totalWidth / 2;
+    const paths: string[] = [];
+    for (const g of glyphs) {
+      const p = g.getPath(cursorX, y, fontSize);
+      if (p.commands.length > 0) {
+        const svg = p.toSVG(2);
+        paths.push(svg.replace('<path', '<path fill="' + fontColor + '"'));
+      }
+      if (g.advanceWidth) cursorX += g.advanceWidth * scale;
+    }
+
+    return paths.join('\n');
+  }
+
+  private async overlayText(
+    imageBuffer: Buffer,
+    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+  ): Promise<Buffer> {
+    const metadata = await sharp(imageBuffer).metadata();
+    const imgWidth = metadata.width || 800;
+    const imgHeight = metadata.height || 600;
+
+    const paths = items.map(l => this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor)).join('\n');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${paths}</svg>`;
+
+    return sharp(imageBuffer)
+      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  }
+
+  private async overlayTextToFile(
+    imageBuffer: Buffer,
+    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+    outputPath: string,
+  ): Promise<void> {
+    const metadata = await sharp(imageBuffer).metadata();
+    const imgWidth = metadata.width || 800;
+    const imgHeight = metadata.height || 600;
+
+    const paths = items.map(l => this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor)).join('\n');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${paths}</svg>`;
+
+    await sharp(imageBuffer)
+      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
+      .toFile(outputPath);
   }
 
   async saveConfig(dto: CreateDorsalConfigDto): Promise<DorsalConfig> {
@@ -163,7 +232,6 @@ export class DorsalesService {
       if (!baseImg) continue;
 
       const campos = (baseImg.camposMostrar || 'numero').split(',').map(s => s.trim());
-
       const imageBuffer = require('fs').readFileSync(baseImg.rutaImagen);
 
       const lines: { text: string; y: number; cfg: ReturnType<typeof this.getFieldConfig> }[] = [];
@@ -339,55 +407,7 @@ export class DorsalesService {
     return { total };
   }
 
-  private getFontStyle(): string {
-    if (!this.fontDataUri) return '';
-    return `<style>@font-face{font-family:'D';src:url(${this.fontDataUri}) format('woff2');}</style>`;
-  }
-
-  private async overlayText(
-    imageBuffer: Buffer,
-    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
-  ): Promise<Buffer> {
-    const metadata = await sharp(imageBuffer).metadata();
-    const imgWidth = metadata.width || 800;
-    const imgHeight = metadata.height || 600;
-
-    const style = this.getFontStyle();
-    const fontFace = this.fontDataUri ? 'D' : 'sans-serif';
-    const svgParts = items.map(l =>
-      `<text x="${l.x}" y="${l.y}" font-size="${l.fontSize}" font-family="${fontFace}" fill="${l.fontColor}" text-anchor="middle">${this.escapeXml(l.text)}</text>`,
-    ).join('\n');
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${style}${svgParts}</svg>`;
-
-    return sharp(imageBuffer)
-      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
-      .toBuffer();
-}
-
   private escapeXml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-  }
-
-  private async overlayTextToFile(
-    imageBuffer: Buffer,
-    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
-    outputPath: string,
-  ): Promise<void> {
-    const metadata = await sharp(imageBuffer).metadata();
-    const imgWidth = metadata.width || 800;
-    const imgHeight = metadata.height || 600;
-
-    const svgParts = items.map(l =>
-      `<text x="${l.x}" y="${l.y}" font-size="${l.fontSize}" font-family="sans-serif" fill="${l.fontColor}" text-anchor="middle">${this.escapeXml(l.text)}</text>`,
-    ).join('\n');
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}"><style>@font-face{font-family:sans-serif;src:local('DejaVu Sans'),local('Liberation Sans'),local('FreeSans'),local('sans-serif');}</style>${svgParts}</svg>`;
-
-    await sharp(imageBuffer)
-      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
-      .toFile(outputPath);
   }
 }

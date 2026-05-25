@@ -22,6 +22,7 @@
    },
    "dependencies": {
       "@fontsource/dejavu-sans": "^5.2.5",
+      "@fontsource/roboto": "^5.2.10",
       "@nestjs/common": "^9.0.0",
       "@nestjs/core": "^9.0.0",
       "@nestjs/mapped-types": "*",
@@ -38,7 +39,8 @@
       "reflect-metadata": "^0.1.13",
       "rxjs": "^7.2.0",
       "sharp": "^0.34.5",
-      "typeorm": "0.3.17"
+      "typeorm": "0.3.17",
+      "wawoff2": "^2.0.1"
    },
    "devDependencies": {
       "@nestjs/cli": "^9.0.0",
