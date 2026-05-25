@@ -42,15 +42,15 @@ jobs:
             set ftp:ssl-allow no;
             set ftp:passive-mode on;
             set net:max-retries 3;
-            mirror -R --delete --verbose \
+            mirror -R --verbose \
               --exclude .git \
+              --exclude .htaccess \
               ./deploy-package/ ./;
-            put -O ./ node_modules.zip;
             quit
           "
           echo ""
           echo "=================================================="
-          echo "  Todo subido por FTP."
-          echo "  Extrae node_modules.zip en cPanel File Manager"
-          echo "  Luego reinicia la Node.js App."
+          echo "  Build subido. Si cambiaste package.json,"
+          echo "  descarga 'node_modules' artifact y extraelo"
+          echo "  manualmente en cPanel. Luego reinicia."
           echo "=================================================="
