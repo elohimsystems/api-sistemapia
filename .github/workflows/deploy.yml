@@ -44,14 +44,13 @@ jobs:
             set net:max-retries 3;
             mirror -R --delete --verbose \
               --exclude .git \
-              ./deploy-package/ ./;
-            put -O ./ node_modules.zip;
+              ./deploy-package/ ${{ secrets.FTP_API_DIR }};
+            put -O ${{ secrets.FTP_API_DIR }} node_modules.zip;
             quit
           "
           echo ""
           echo "=================================================="
           echo "  Todo subido por FTP."
           echo "  Extrae node_modules.zip en cPanel File Manager"
-          echo "  en /home/sistem19/public_html/dev.api-sistemapia.com.ve/"
           echo "  Luego reinicia la Node.js App."
           echo "=================================================="
