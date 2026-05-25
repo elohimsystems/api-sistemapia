@@ -1,0 +1,28 @@
+# CORS
+<IfModule Litespeed>
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+</IfModule>
+
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/sistem19/public_html/dev-api.sistemapia.com.ve"
+PassengerBaseURI "/"
+PassengerNodejs "/home/sistem19/nodevenv/public_html/dev-api.sistemapia.com.ve/20/bin/node"
+PassengerAppType node
+PassengerStartupFile main.js
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+
+<IfModule mod_dir.c>
+    DirectorySlash Off
+</IfModule>
+
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
+<IfModule Litespeed>
+SetEnv DB_HOST localhost
+SetEnv DB_PORT 5432
+SetEnv DB_USER sistem19
+SetEnv DB_PASS ZC_v?ZOr_pc-
+SetEnv DB_NAME sistem19_bdpiav105
+</IfModule>
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END
