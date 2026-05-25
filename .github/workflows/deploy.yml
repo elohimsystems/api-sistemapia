@@ -44,6 +44,16 @@ jobs:
             set ftp:passive-mode on;
             set net:max-retries 3;
             mirror -R --delete --verbose \
+              --exclude node_modules/ \
+              --exclude .git \
               ./deploy-package/ ./;
             quit
           "
+          echo ""
+          echo "=================================================="
+          echo "  node_modules/ no se pudo subir por FTP."
+          echo "  Descarga el artifact 'api-deploy.zip' de este"
+          echo "  Action, extraelo en cPanel File Manager en:"
+          echo "  /home/sistem19/public_html/dev.api-sistemapia.com.ve/"
+          echo "  Luego reinicia la Node.js App."
+          echo "=================================================="
