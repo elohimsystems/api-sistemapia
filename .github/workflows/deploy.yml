@@ -48,9 +48,24 @@ jobs:
               ./deploy-package/ ./;
             quit
           "
-          echo ""
-          echo "=================================================="
-          echo "  Build subido. Si cambiaste package.json,"
-          echo "  descarga 'node_modules' artifact y extraelo"
-          echo "  manualmente en cPanel. Luego reinicia."
-          echo "=================================================="
+          NODE_EXISTS=$(lftp -c "
+            open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_HOST }};
+            set ftp:ssl-allow no;
+            set net:max-retries 3;
+            cls -1 --list node_modules/ 2>/dev/null | head -1;
+            quit
+          ")
+          if [ -z "$NODE_EXISTS" ]; then
+            echo "node_modules/ no existe, subiendo zip..."
+            lftp -c "
+              open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_HOST }};
+              set ftp:ssl-allow no;
+              set ftp:passive-mode on;
+              set net:max-retries 3;
+              put -O ./ node_modules.zip;
+              quit
+            "
+            echo "Zip subido. Extraelo en cPanel File Manager y reinicia la app."
+          else
+            echo "node_modules/ ya existe, zip omitido"
+          fi
