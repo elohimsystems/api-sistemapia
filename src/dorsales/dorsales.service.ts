@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 import * as sharp from 'sharp';
 import { DorsalConfig, DorsalImagen, DorsalBaseImagen } from './entities';
 import { CreateDorsalConfigDto } from './dto/create-dorsal-config.dto';
@@ -11,19 +11,36 @@ import { Inscrito } from '../inscritos/entities/inscrito.entity';
 @Injectable()
 export class DorsalesService {
   private readonly uploadDir: string;
+  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
+  private fontDataUri: string = '';
 
   constructor(
     @InjectRepository(DorsalConfig)
-    private configRepo: Repository<DorsalConfig>,
-    @InjectRepository(DorsalImagen)
-    private imagenRepo: Repository<DorsalImagen>,
+    private readonly configRepo: Repository<DorsalConfig>,
     @InjectRepository(DorsalBaseImagen)
-    private baseImagenRepo: Repository<DorsalBaseImagen>,
+    private readonly baseImagenRepo: Repository<DorsalBaseImagen>,
+    @InjectRepository(DorsalImagen)
+    private readonly imagenRepo: Repository<DorsalImagen>,
     @InjectRepository(Inscrito)
-    private inscritoRepo: Repository<Inscrito>,
+    private readonly inscritoRepo: Repository<Inscrito>,
   ) {
     this.uploadDir = join(process.cwd(), 'uploads', 'dorsales');
     if (!existsSync(this.uploadDir)) mkdirSync(this.uploadDir, { recursive: true });
+    this.cargarFont();
+  }
+
+  private cargarFont() {
+    try {
+      const fontPath = join(__dirname, '..', '..', 'node_modules', '@fontsource', 'dejavu-sans', 'files', 'dejavu-sans-latin-400-normal.woff2');
+      const fontBuf = readFileSync(fontPath);
+      this.fontDataUri = 'data:font/woff2;base64,' + fontBuf.toString('base64');
+    } catch {
+      try {
+        const fontPath = join(process.cwd(), 'node_modules', '@fontsource', 'dejavu-sans', 'files', 'dejavu-sans-latin-400-normal.woff2');
+        const fontBuf = readFileSync(fontPath);
+        this.fontDataUri = 'data:font/woff2;base64,' + fontBuf.toString('base64');
+      } catch {}
+    }
   }
 
   async saveConfig(dto: CreateDorsalConfigDto): Promise<DorsalConfig> {
@@ -100,8 +117,6 @@ export class DorsalesService {
     return this.baseImagenRepo.save(img);
   }
 
-  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
-
   private getFieldConfig(
     baseImg: DorsalBaseImagen,
     campo: string,
@@ -150,9 +165,6 @@ export class DorsalesService {
       const campos = (baseImg.camposMostrar || 'numero').split(',').map(s => s.trim());
 
       const imageBuffer = require('fs').readFileSync(baseImg.rutaImagen);
-      const metadata = await sharp(imageBuffer).metadata();
-      const imgWidth = metadata.width || 800;
-      const imgHeight = metadata.height || 600;
 
       const lines: { text: string; y: number; cfg: ReturnType<typeof this.getFieldConfig> }[] = [];
 
@@ -194,19 +206,13 @@ export class DorsalesService {
         lines.push({ text: `Cat: ${inscrito.categoria.descripcion}`, y: cfg.posicionY, cfg });
       }
 
-      const svgText = lines.map(l =>
-        `<text x="${l.cfg.posicionX}" y="${l.y}" font-size="${l.cfg.fontSize}" font-family="${l.cfg.fontFamily}" fill="${l.cfg.fontColor}" text-anchor="middle">${this.escapeXml(l.text)}</text>`,
-      ).join('\n');
-
-      const svg = `<svg width="${imgWidth}" height="${imgHeight}">${svgText}</svg>`;
-
       const outputName = `${c?.iddocumento || inscrito.id}_${Date.now()}.jpg`;
       const outputPath = join(eventDir, outputName);
 
-      await sharp(imageBuffer)
-        .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-        .jpeg({ quality: 90 })
-        .toFile(outputPath);
+      await this.overlayTextToFile(imageBuffer, lines.map(l => ({
+        text: l.text, x: l.cfg.posicionX, y: l.y,
+        fontSize: l.cfg.fontSize, fontColor: l.cfg.fontColor,
+      })), outputPath);
 
       const docId = c?.iddocumento || '';
       await this.imagenRepo.save(
@@ -224,20 +230,11 @@ export class DorsalesService {
   ): Promise<Buffer> {
     const baseImg = await this.obtenerBaseImagen(idbaseimagen);
     const imageBuffer = require('fs').readFileSync(baseImg.rutaImagen);
-    const metadata = await sharp(imageBuffer).metadata();
-    const imgWidth = metadata.width || 800;
-    const imgHeight = metadata.height || 600;
 
-    const svgParts = camposConfig.map(fc =>
-      `<text x="${fc.posicionX}" y="${fc.posicionY}" font-size="${fc.fontSize}" font-family="${fc.fontFamily}" fill="${fc.fontColor}" text-anchor="middle">${this.escapeXml(fc.valor)}</text>`,
-    ).join('\n');
-
-    const svg = `<svg width="${imgWidth}" height="${imgHeight}">${svgParts}</svg>`;
-
-    return sharp(imageBuffer)
-      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
-      .toBuffer();
+    return this.overlayText(imageBuffer, camposConfig.map(fc => ({
+      text: fc.valor, x: fc.posicionX, y: fc.posicionY,
+      fontSize: fc.fontSize, fontColor: fc.fontColor,
+    })));
   }
 
   private encontrarBase(bases: DorsalBaseImagen[], idCompetencia: string, idCategoria: string, sexo: string): DorsalBaseImagen | undefined {
@@ -342,7 +339,55 @@ export class DorsalesService {
     return { total };
   }
 
+  private getFontStyle(): string {
+    if (!this.fontDataUri) return '';
+    return `<style>@font-face{font-family:'D';src:url(${this.fontDataUri}) format('woff2');}</style>`;
+  }
+
+  private async overlayText(
+    imageBuffer: Buffer,
+    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+  ): Promise<Buffer> {
+    const metadata = await sharp(imageBuffer).metadata();
+    const imgWidth = metadata.width || 800;
+    const imgHeight = metadata.height || 600;
+
+    const style = this.getFontStyle();
+    const fontFace = this.fontDataUri ? 'D' : 'sans-serif';
+    const svgParts = items.map(l =>
+      `<text x="${l.x}" y="${l.y}" font-size="${l.fontSize}" font-family="${fontFace}" fill="${l.fontColor}" text-anchor="middle">${this.escapeXml(l.text)}</text>`,
+    ).join('\n');
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${style}${svgParts}</svg>`;
+
+    return sharp(imageBuffer)
+      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+}
+
   private escapeXml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  }
+
+  private async overlayTextToFile(
+    imageBuffer: Buffer,
+    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+    outputPath: string,
+  ): Promise<void> {
+    const metadata = await sharp(imageBuffer).metadata();
+    const imgWidth = metadata.width || 800;
+    const imgHeight = metadata.height || 600;
+
+    const svgParts = items.map(l =>
+      `<text x="${l.x}" y="${l.y}" font-size="${l.fontSize}" font-family="sans-serif" fill="${l.fontColor}" text-anchor="middle">${this.escapeXml(l.text)}</text>`,
+    ).join('\n');
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}"><style>@font-face{font-family:sans-serif;src:local('DejaVu Sans'),local('Liberation Sans'),local('FreeSans'),local('sans-serif');}</style>${svgParts}</svg>`;
+
+    await sharp(imageBuffer)
+      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
+      .toFile(outputPath);
   }
 }
