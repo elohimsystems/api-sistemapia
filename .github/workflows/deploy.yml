@@ -2,8 +2,7 @@ name: Deploy API
 
 on:
   push:
-    branches: [develop]
-  workflow_dispatch:
+    branches: [develop, main, master]
 
 jobs:
   build:
@@ -37,10 +36,12 @@ jobs:
 
       - name: Deploy via FTP
         env:
-          FTP_USERNAME: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_USERNAME_PROD || secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_PASSWORD_PROD || secrets.FTP_PASSWORD }}
-          FTP_HOST: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_HOST_PROD || secrets.FTP_HOST }}
+          IS_PROD: ${{ github.ref_name == 'main' || github.ref_name == 'master' }}
+          FTP_USERNAME: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_USERNAME_PROD || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_PASSWORD_PROD || secrets.FTP_PASSWORD }}
+          FTP_HOST: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_HOST_PROD || secrets.FTP_HOST }}
         run: |
+          echo "Desplegando a $([ $IS_PROD = true ] && echo 'PRODUCCIÓN' || echo 'DESARROLLO')..."
           sudo apt-get update -qq && sudo apt-get install -y -qq lftp
           lftp -c "
             open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
