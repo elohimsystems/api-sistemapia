@@ -2,7 +2,8 @@ name: Deploy API
 
 on:
   push:
-    branches: [main, master]
+    branches: [develop]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -35,10 +36,14 @@ jobs:
           path: node_modules.zip
 
       - name: Deploy via FTP
+        env:
+          FTP_USERNAME: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_USERNAME_PROD || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_PASSWORD_PROD || secrets.FTP_PASSWORD }}
+          FTP_HOST: ${{ github.event_name == 'workflow_dispatch' && secrets.FTP_HOST_PROD || secrets.FTP_HOST }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq lftp
           lftp -c "
-            open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_HOST }};
+            open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
             set ftp:ssl-allow no;
             set ftp:passive-mode on;
             set net:max-retries 3;
@@ -49,7 +54,7 @@ jobs:
             quit
           "
           NODE_EXISTS=$(lftp -c "
-            open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_HOST }};
+            open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
             set ftp:ssl-allow no;
             set net:max-retries 3;
             cls -1 --list node_modules/ 2>/dev/null | head -1;
@@ -58,7 +63,7 @@ jobs:
           if [ -z "$NODE_EXISTS" ]; then
             echo "node_modules/ no existe, subiendo zip..."
             lftp -c "
-              open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_HOST }};
+              open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
               set ftp:ssl-allow no;
               set ftp:passive-mode on;
               set net:max-retries 3;
