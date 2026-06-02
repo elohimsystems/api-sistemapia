@@ -50,6 +50,14 @@ export class EventosService {
     return await this.eventoRepository.save(evento);
   }
 
+  async findActivos() {
+    const ahora = new Date();
+    return await this.eventoRepository.find({
+      where: { activo: true },
+      relations: ['ciudad', 'organizadorRel', 'estado', 'inscritos'],
+    }).then(eventos => eventos.filter(e => e.fecha && new Date(e.fecha) > ahora));
+  }
+
   async findAll() {
     return await this.eventoRepository.find({
       relations: ['ciudad', 'organizadorRel', 'estado', 'inscritos'],

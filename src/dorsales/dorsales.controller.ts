@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UploadedFile, UseInterceptors, NotFoundException, StreamableFile, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UploadedFile, UseInterceptors, NotFoundException, BadRequestException, StreamableFile, HttpCode } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { createReadStream, existsSync } from 'fs';
 import { DorsalesService } from './dorsales.service';
@@ -87,6 +87,15 @@ export class DorsalesController {
     return this.dorsalesService.generar(+idevento);
   }
 
+  @Post('generar/:idevento/por-documentos')
+  async generarPorDocumentos(
+    @Param('idevento') idevento: string,
+    @Body('documentos') documentos: string[],
+  ) {
+    if (!documentos?.length) throw new BadRequestException('Debe enviar un arreglo de documentos');
+    return this.dorsalesService.generarPorDocumentos(+idevento, documentos);
+  }
+
   @Get('generar/:idevento')
   async contarDorsales(@Param('idevento') idevento: string) {
     return this.dorsalesService.contarDorsalesPorEvento(+idevento);
@@ -112,6 +121,11 @@ export class DorsalesController {
   @Get('buscar/:idevento/:iddocumento')
   buscarEnEvento(@Param('idevento') idevento: string, @Param('iddocumento') iddocumento: string) {
     return this.dorsalesService.buscarPorDocumentoEnEvento(+idevento, iddocumento);
+  }
+
+  @Get('listar/:idevento')
+  async listarDorsales(@Param('idevento') idevento: string) {
+    return this.dorsalesService.listarDorsales(+idevento);
   }
 
   @Get('imagen/:id')

@@ -25,6 +25,11 @@ export class EventosController {
     return this.eventosService.findAll();
   }
 
+  @Get('activos')
+  findActivos() {
+    return this.eventosService.findActivos();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.eventosService.findOne(+id);

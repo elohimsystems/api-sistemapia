@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import * as sharp from 'sharp';
@@ -201,16 +201,15 @@ export class DorsalesService {
     };
   }
 
-  async generar(idevento: number): Promise<{ total: number; generadas: string[] }> {
-    await this.imagenRepo.delete({ idevento });
+  private async generarInscritos(
+    idevento: number,
+    inscritos: Inscrito[],
+    deleteExisting: boolean,
+  ): Promise<{ total: number; generadas: string[] }> {
+    if (deleteExisting) await this.imagenRepo.delete({ idevento });
 
     const config = await this.configRepo.findOne({ where: { idevento } });
     const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
-
-    const inscritos = await this.inscritoRepo.find({
-      where: { evento: { id: idevento } },
-      relations: ['competidor', 'competencia', 'categoria'],
-    });
 
     if (!inscritos.length) throw new NotFoundException(`No hay inscritos en evento #${idevento}`);
 
@@ -290,6 +289,29 @@ export class DorsalesService {
     }
 
     return { total: generadas.length, generadas };
+  }
+
+  async generar(idevento: number): Promise<{ total: number; generadas: string[] }> {
+    const inscritos = await this.inscritoRepo.find({
+      where: { evento: { id: idevento } },
+      relations: ['competidor', 'competencia', 'categoria'],
+    });
+    return this.generarInscritos(idevento, inscritos, true);
+  }
+
+  async generarPorDocumentos(idevento: number, documentos: string[]): Promise<{ total: number; generadas: string[] }> {
+    const existentes = await this.imagenRepo.find({ where: { idevento, iddocumento: In(documentos) } });
+    for (const img of existentes) {
+      try { require('fs').unlinkSync(img.rutaImagen); } catch {}
+    }
+    await this.imagenRepo.delete({ idevento, iddocumento: In(documentos) });
+
+    const inscritos = await this.inscritoRepo.find({
+      where: { evento: { id: idevento } },
+      relations: ['competidor', 'competencia', 'categoria'],
+    });
+    const filtrados = inscritos.filter(i => i.competidor?.iddocumento && documentos.includes(i.competidor.iddocumento));
+    return this.generarInscritos(idevento, filtrados, false);
   }
 
   async generarPreview(
@@ -380,6 +402,34 @@ export class DorsalesService {
           item.sexo = c?.sexo || '';
           item.competencia = inscrito.competencia?.descripcion || '';
           item.categoria = inscrito.categoria?.descripcion || '';
+        }
+      } catch {}
+      result.push(item);
+    }
+    return result;
+  }
+
+  async listarDorsales(idevento: number): Promise<any[]> {
+    const imagenes = await this.imagenRepo.find({ where: { idevento } });
+    const result: any[] = [];
+    for (const img of imagenes) {
+      if (!existsSync(img.rutaImagen)) {
+        await this.imagenRepo.remove(img);
+        continue;
+      }
+      const item: any = { id: img.id, iddocumento: img.iddocumento };
+      try {
+        const inscrito = await this.inscritoRepo.findOne({
+          where: { id: String(img.idinscrito) },
+          relations: ['competidor', 'competencia', 'categoria'],
+        });
+        if (inscrito) {
+          const c = inscrito.competidor;
+          item.nombre = c ? `${c.nombre || ''} ${c.apellido || ''}`.trim() : '';
+          item.sexo = c?.sexo || '';
+          item.competencia = inscrito.competencia?.descripcion || '';
+          item.categoria = inscrito.categoria?.descripcion || '';
+          item.numero = inscrito.numero;
         }
       } catch {}
       result.push(item);
