@@ -409,6 +409,34 @@ export class DorsalesService {
     return result;
   }
 
+  async listarDorsales(idevento: number): Promise<any[]> {
+    const imagenes = await this.imagenRepo.find({ where: { idevento } });
+    const result: any[] = [];
+    for (const img of imagenes) {
+      if (!existsSync(img.rutaImagen)) {
+        await this.imagenRepo.remove(img);
+        continue;
+      }
+      const item: any = { id: img.id, iddocumento: img.iddocumento };
+      try {
+        const inscrito = await this.inscritoRepo.findOne({
+          where: { id: String(img.idinscrito) },
+          relations: ['competidor', 'competencia', 'categoria'],
+        });
+        if (inscrito) {
+          const c = inscrito.competidor;
+          item.nombre = c ? `${c.nombre || ''} ${c.apellido || ''}`.trim() : '';
+          item.sexo = c?.sexo || '';
+          item.competencia = inscrito.competencia?.descripcion || '';
+          item.categoria = inscrito.categoria?.descripcion || '';
+          item.numero = inscrito.numero;
+        }
+      } catch {}
+      result.push(item);
+    }
+    return result;
+  }
+
   async obtenerImagen(id: number): Promise<DorsalImagen> {
     const imagen = await this.imagenRepo.findOne({ where: { id } });
     if (!imagen) throw new NotFoundException(`Imagen #${id} no encontrada`);

@@ -123,6 +123,11 @@ export class DorsalesController {
     return this.dorsalesService.buscarPorDocumentoEnEvento(+idevento, iddocumento);
   }
 
+  @Get('listar/:idevento')
+  async listarDorsales(@Param('idevento') idevento: string) {
+    return this.dorsalesService.listarDorsales(+idevento);
+  }
+
   @Get('imagen/:id')
   async verImagen(@Param('id') id: string): Promise<StreamableFile> {
     const imagen = await this.dorsalesService.obtenerImagen(+id);
