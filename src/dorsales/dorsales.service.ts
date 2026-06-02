@@ -201,16 +201,15 @@ export class DorsalesService {
     };
   }
 
-  async generar(idevento: number): Promise<{ total: number; generadas: string[] }> {
-    await this.imagenRepo.delete({ idevento });
+  private async generarInscritos(
+    idevento: number,
+    inscritos: Inscrito[],
+    deleteExisting: boolean,
+  ): Promise<{ total: number; generadas: string[] }> {
+    if (deleteExisting) await this.imagenRepo.delete({ idevento });
 
     const config = await this.configRepo.findOne({ where: { idevento } });
     const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
-
-    const inscritos = await this.inscritoRepo.find({
-      where: { evento: { id: idevento } },
-      relations: ['competidor', 'competencia', 'categoria'],
-    });
 
     if (!inscritos.length) throw new NotFoundException(`No hay inscritos en evento #${idevento}`);
 
@@ -290,6 +289,23 @@ export class DorsalesService {
     }
 
     return { total: generadas.length, generadas };
+  }
+
+  async generar(idevento: number): Promise<{ total: number; generadas: string[] }> {
+    const inscritos = await this.inscritoRepo.find({
+      where: { evento: { id: idevento } },
+      relations: ['competidor', 'competencia', 'categoria'],
+    });
+    return this.generarInscritos(idevento, inscritos, true);
+  }
+
+  async generarPorDocumentos(idevento: number, documentos: string[]): Promise<{ total: number; generadas: string[] }> {
+    const inscritos = await this.inscritoRepo.find({
+      where: { evento: { id: idevento } },
+      relations: ['competidor', 'competencia', 'categoria'],
+    });
+    const filtrados = inscritos.filter(i => i.competidor?.iddocumento && documentos.includes(i.competidor.iddocumento));
+    return this.generarInscritos(idevento, filtrados, false);
   }
 
   async generarPreview(
