@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import * as sharp from 'sharp';
@@ -300,6 +300,12 @@ export class DorsalesService {
   }
 
   async generarPorDocumentos(idevento: number, documentos: string[]): Promise<{ total: number; generadas: string[] }> {
+    const existentes = await this.imagenRepo.find({ where: { idevento, iddocumento: In(documentos) } });
+    for (const img of existentes) {
+      try { require('fs').unlinkSync(img.rutaImagen); } catch {}
+    }
+    await this.imagenRepo.delete({ idevento, iddocumento: In(documentos) });
+
     const inscritos = await this.inscritoRepo.find({
       where: { evento: { id: idevento } },
       relations: ['competidor', 'competencia', 'categoria'],
