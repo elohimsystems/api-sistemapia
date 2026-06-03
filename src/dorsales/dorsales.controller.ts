@@ -123,6 +123,22 @@ export class DorsalesController {
     return this.dorsalesService.buscarPorDocumentoEnEvento(+idevento, iddocumento);
   }
 
+  @Post('enviar-email')
+  async enviarEmail(@Body() body: { ids: number[]; subject: string; message: string }) {
+    if (!body.ids?.length) throw new BadRequestException('Debe enviar un arreglo de ids');
+    if (!body.subject) throw new BadRequestException('Debe enviar un subject');
+    try {
+      return await this.dorsalesService.enviarEmail(body.ids, body.subject, body.message || '');
+    } catch (e: any) {
+      throw new BadRequestException(`Error al enviar email: ${e.message}`);
+    }
+  }
+
+  @Patch(':id/desmarcar-enviado')
+  async desmarcarEnviado(@Param('id') id: string) {
+    return this.dorsalesService.desmarcarEnviado(+id);
+  }
+
   @Get('listar/:idevento')
   async listarDorsales(@Param('idevento') idevento: string) {
     return this.dorsalesService.listarDorsales(+idevento);

@@ -7,6 +7,7 @@ import * as sharp from 'sharp';
 import { DorsalConfig, DorsalImagen, DorsalBaseImagen } from './entities';
 import { CreateDorsalConfigDto } from './dto/create-dorsal-config.dto';
 import { Inscrito } from '../inscritos/entities/inscrito.entity';
+import { MailService } from '../mail/mail.service';
 
 const opentype = require('opentype.js');
 const wawoff2 = require('wawoff2');
@@ -26,6 +27,7 @@ export class DorsalesService {
     private readonly imagenRepo: Repository<DorsalImagen>,
     @InjectRepository(Inscrito)
     private readonly inscritoRepo: Repository<Inscrito>,
+    private readonly mailService: MailService,
   ) {
     this.uploadDir = join(process.cwd(), 'uploads', 'dorsales');
     if (!existsSync(this.uploadDir)) mkdirSync(this.uploadDir, { recursive: true });
@@ -417,7 +419,7 @@ export class DorsalesService {
         await this.imagenRepo.remove(img);
         continue;
       }
-      const item: any = { id: img.id, iddocumento: img.iddocumento };
+      const item: any = { id: img.id, iddocumento: img.iddocumento, enviado: img.enviado };
       try {
         const inscrito = await this.inscritoRepo.findOne({
           where: { id: String(img.idinscrito) },
@@ -435,6 +437,57 @@ export class DorsalesService {
       result.push(item);
     }
     return result;
+  }
+
+  async desmarcarEnviado(id: number): Promise<{ id: number }> {
+    const img = await this.imagenRepo.findOne({ where: { id } });
+    if (!img) throw new NotFoundException('Dorsal no encontrado');
+    img.enviado = false;
+    await this.imagenRepo.save(img);
+    return { id };
+  }
+
+  async enviarEmail(
+    dorsalIds: number[],
+    subject: string,
+    message: string,
+  ): Promise<{ enviados: number; fallidos: { id: number; error: string }[] }> {
+    const enviados: number[] = [];
+    const fallidos: { id: number; error: string }[] = [];
+
+    for (const id of dorsalIds) {
+      try {
+        const img = await this.imagenRepo.findOne({ where: { id } });
+        if (!img) { fallidos.push({ id, error: 'Dorsal no encontrado' }); continue; }
+
+        if (img.enviado) { fallidos.push({ id, error: 'El dorsal ya fue enviado anteriormente' }); continue; }
+
+        const inscrito = await this.inscritoRepo.findOne({ where: { id: String(img.idinscrito) }, relations: ['competidor'] });
+        if (!inscrito) { fallidos.push({ id, error: 'Inscrito no encontrado' }); continue; }
+
+        const email = inscrito.competidor?.emailpersonal || inscrito.competidor?.email;
+        if (!email) { fallidos.push({ id, error: 'El participante no tiene email registrado' }); continue; }
+
+        if (!existsSync(img.rutaImagen)) { fallidos.push({ id, error: 'Archivo de imagen no encontrado' }); continue; }
+
+        const buffer = readFileSync(img.rutaImagen);
+        const nombre = `${inscrito.competidor?.nombre || ''} ${inscrito.competidor?.apellido || ''}`.trim() || 'Participante';
+
+        await this.mailService.sendDorsalEmail(
+          email,
+          subject,
+          `${message}\n\n---\nNombre: ${nombre}\nDocumento: ${img.iddocumento}`,
+          buffer,
+          `dorsal_${img.iddocumento}.jpg`,
+        );
+        await this.imagenRepo.update(id, { enviado: true });
+        enviados.push(id);
+      } catch (e: any) {
+        fallidos.push({ id, error: e.message || 'Error desconocido' });
+      }
+    }
+
+    return { enviados: enviados.length, fallidos };
   }
 
   async obtenerImagen(id: number): Promise<DorsalImagen> {

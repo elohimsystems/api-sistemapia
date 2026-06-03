@@ -9,6 +9,7 @@ import { CategoriasModule } from './categorias/categorias.module';
 import { PagosModule } from './pagos/pagos.module';
 import { CompetenciasModule } from './competencias/competencias.module';
 import { DorsalesModule } from './dorsales/dorsales.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { DorsalesModule } from './dorsales/dorsales.module';
     PagosModule,
     CompetenciasModule,
     DorsalesModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],
