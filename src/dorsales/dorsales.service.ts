@@ -12,8 +12,19 @@ import { MailService } from '../mail/mail.service';
 const opentype = require('opentype.js');
 const wawoff2 = require('wawoff2');
 
+interface EmailTask {
+  id: string;
+  status: 'pending' | 'processing' | 'completed';
+  total: number;
+  enviados: number;
+  fallidos: { id: number; error: string }[];
+  createdAt: Date;
+}
+
 @Injectable()
 export class DorsalesService {
+  private readonly emailTasks = new Map<string, EmailTask>();
+  private taskCounter = 0;
   private readonly uploadDir: string;
   private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
   private font: any = null;
@@ -447,47 +458,118 @@ export class DorsalesService {
     return { id };
   }
 
+  getEmailTaskStatus(taskId: string): EmailTask {
+    const task = this.emailTasks.get(taskId);
+    if (!task) throw new NotFoundException('Task no encontrada');
+    return task;
+  }
+
+  async enviarTodos(
+    idevento: number,
+    subject: string,
+    message: string,
+  ): Promise<{ task_id: string }> {
+    const dorsales = await this.imagenRepo.find({ where: { idevento } });
+    const ids = dorsales.map(d => d.id);
+    return this.enviarEmail(ids, subject, message);
+  }
+
   async enviarEmail(
     dorsalIds: number[],
     subject: string,
     message: string,
-  ): Promise<{ enviados: number; fallidos: { id: number; error: string }[] }> {
-    const enviados: number[] = [];
-    const fallidos: { id: number; error: string }[] = [];
+  ): Promise<{ task_id: string }> {
+    const taskId = `email_${Date.now()}_${++this.taskCounter}`;
+    const task: EmailTask = {
+      id: taskId,
+      status: 'pending',
+      total: dorsalIds.length,
+      enviados: 0,
+      fallidos: [],
+      createdAt: new Date(),
+    };
+    this.emailTasks.set(taskId, task);
 
-    for (const id of dorsalIds) {
-      try {
-        const img = await this.imagenRepo.findOne({ where: { id } });
-        if (!img) { fallidos.push({ id, error: 'Dorsal no encontrado' }); continue; }
+    this.processEmailBatch(task, dorsalIds, subject, message).catch(err => {
+      console.error('Error crítico en envío batch:', err);
+    });
 
-        if (img.enviado) { fallidos.push({ id, error: 'El dorsal ya fue enviado anteriormente' }); continue; }
+    return { task_id: taskId };
+  }
 
-        const inscrito = await this.inscritoRepo.findOne({ where: { id: String(img.idinscrito) }, relations: ['competidor'] });
-        if (!inscrito) { fallidos.push({ id, error: 'Inscrito no encontrado' }); continue; }
+  private async processEmailBatch(
+    task: EmailTask,
+    ids: number[],
+    subject: string,
+    message: string,
+  ): Promise<void> {
+    task.status = 'processing';
+    const CONCURRENCY = 15;
 
-        const email = inscrito.competidor?.emailpersonal || inscrito.competidor?.email;
-        if (!email) { fallidos.push({ id, error: 'El participante no tiene email registrado' }); continue; }
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const batch = ids.slice(i, i + CONCURRENCY);
 
-        if (!existsSync(img.rutaImagen)) { fallidos.push({ id, error: 'Archivo de imagen no encontrado' }); continue; }
+      const results = await Promise.allSettled(
+        batch.map(id => this.sendSingleDorsal(id, subject, message)),
+      );
 
-        const buffer = readFileSync(img.rutaImagen);
-        const nombre = `${inscrito.competidor?.nombre || ''} ${inscrito.competidor?.apellido || ''}`.trim() || 'Participante';
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          if (result.value.success) {
+            task.enviados++;
+          } else {
+            task.fallidos.push({ id: result.value.id, error: result.value.error });
+          }
+        }
+      }
 
-        await this.mailService.sendDorsalEmail(
-          email,
-          subject,
-          `${message}\n\n---\nNombre: ${nombre}\nDocumento: ${img.iddocumento}`,
-          buffer,
-          `dorsal_${img.iddocumento}.jpg`,
-        );
-        await this.imagenRepo.update(id, { enviado: true });
-        enviados.push(id);
-      } catch (e: any) {
-        fallidos.push({ id, error: e.message || 'Error desconocido' });
+      if (i + CONCURRENCY < ids.length) {
+        await new Promise(r => setTimeout(r, 200));
       }
     }
 
-    return { enviados: enviados.length, fallidos };
+    task.status = 'completed';
+  }
+
+  private async sendSingleDorsal(
+    id: number,
+    subject: string,
+    message: string,
+  ): Promise<{ id: number; success: boolean; error?: string }> {
+    try {
+      const img = await this.imagenRepo.findOne({ where: { id } });
+      if (!img) return { id, success: false, error: 'Dorsal no encontrado' };
+      if (img.enviado) return { id, success: false, error: 'El dorsal ya fue enviado anteriormente' };
+
+      const inscrito = await this.inscritoRepo.findOne({
+        where: { id: String(img.idinscrito) },
+        relations: ['competidor'],
+      });
+      if (!inscrito) return { id, success: false, error: 'Inscrito no encontrado' };
+
+      const email = inscrito.competidor?.emailpersonal || inscrito.competidor?.email;
+      if (!email) return { id, success: false, error: 'El participante no tiene email registrado' };
+      if (!existsSync(img.rutaImagen)) return { id, success: false, error: 'Archivo de imagen no encontrado' };
+
+      const buffer = readFileSync(img.rutaImagen);
+      const nombre = `${inscrito.competidor?.nombre || ''} ${inscrito.competidor?.apellido || ''}`.trim() || 'Participante';
+
+      const ok = await this.mailService.sendDorsalEmail(
+        email,
+        subject,
+        `${message}\n\n---\nNombre: ${nombre}\nDocumento: ${img.iddocumento}`,
+        buffer,
+        `dorsal_${img.iddocumento}.jpg`,
+      );
+
+      if (ok) {
+        await this.imagenRepo.update(id, { enviado: true });
+        return { id, success: true };
+      }
+      return { id, success: false, error: 'Error al enviar el correo' };
+    } catch (e: any) {
+      return { id, success: false, error: e.message || 'Error desconocido' };
+    }
   }
 
   async obtenerImagen(id: number): Promise<DorsalImagen> {

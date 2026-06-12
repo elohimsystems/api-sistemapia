@@ -74,6 +74,7 @@ jobs:
             mirror -R --verbose \
               --exclude .git \
               --exclude .htaccess \
+              --exclude .env \
               ./deploy-package/ ./;
             quit
           "
