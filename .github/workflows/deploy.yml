@@ -32,8 +32,10 @@ jobs:
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
           if [ -f config.json ]; then cp config.json deploy-package/; fi
-          cp -r deploy-package/src/. deploy-package/
-          rm -rf deploy-package/src
+          if [ -d deploy-package/src ]; then
+            cp -r deploy-package/src/. deploy-package/
+            rm -rf deploy-package/src
+          fi
 
       - name: Package node_modules
         run: |
