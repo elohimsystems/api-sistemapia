@@ -24,13 +24,22 @@ export class AppController {
 
   @Get('config')
   getConfig() {
-    const ruta = join(process.cwd(), 'config.json');
-    if (existsSync(ruta)) {
-      try {
-        const contenido = readFileSync(ruta, 'utf-8');
-        return JSON.parse(contenido);
-      } catch {}
+    const candidatos = [
+      join(process.cwd(), 'config.json'),
+      join(__dirname, '..', '..', 'config.json'),
+      join(process.cwd(), '..', 'config.json'),
+    ];
+    for (const ruta of candidatos) {
+      if (existsSync(ruta)) {
+        try {
+          const contenido = readFileSync(ruta, 'utf-8');
+          return JSON.parse(contenido);
+        } catch (e) {
+          console.error(`Error al leer ${ruta}:`, (e as Error).message);
+        }
+      }
     }
+    console.warn('config.json no encontrado. Buscado en:', candidatos);
     return {
       showEnviarTodos: process.env.SHOW_ENVIAR_TODOS !== 'false',
     };
