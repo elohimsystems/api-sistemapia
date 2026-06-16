@@ -25,14 +25,18 @@ export class AppController {
 
   @Get('config')
   getConfig() {
-    const raiz = dirname(require.main?.filename || process.argv[1]);
-    const ruta = join(raiz, 'config.json');
-    if (existsSync(ruta)) {
-      try {
-        const contenido = readFileSync(ruta, 'utf-8');
-        return JSON.parse(contenido);
-      } catch (e) {
-        logger.error(`Error al leer config.json: ${(e as Error).message}`);
+    const candidatos = [
+      join(dirname(require.main?.filename || process.cwd()), 'config.json'),
+      join(process.cwd(), 'config.json'),
+    ];
+    for (const ruta of candidatos) {
+      if (existsSync(ruta)) {
+        try {
+          const contenido = readFileSync(ruta, 'utf-8');
+          return JSON.parse(contenido);
+        } catch (e) {
+          logger.error(`Error al leer config.json: ${(e as Error).message}`);
+        }
       }
     }
     return {
