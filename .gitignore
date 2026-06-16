@@ -7,3 +7,4 @@ tmp/
 temp/
 .env
 config.json
+uploads/

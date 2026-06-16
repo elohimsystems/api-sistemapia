@@ -90,6 +90,7 @@ jobs:
               --exclude logs \
               --exclude node_modules \
               --exclude node_modules.zip \
+              --exclude uploads \
               ./deploy-package/ ./;
             quit
           "
