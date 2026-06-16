@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { join } from 'path';
@@ -28,6 +28,7 @@ export class DorsalesService {
   private readonly uploadDir: string;
   private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
   private font: any = null;
+  private readonly logger = new Logger(DorsalesService.name);
 
   constructor(
     @InjectRepository(DorsalConfig)
@@ -493,7 +494,7 @@ export class DorsalesService {
     this.emailTasks.set(taskId, task);
 
     this.processEmailBatch(task, dorsalIds, subject, message).catch(err => {
-      console.error('Error crítico en envío batch:', err);
+      this.logger.error(`Error crítico en envío batch: ${err.message}`, err.stack);
     });
 
     return { task_id: taskId };
