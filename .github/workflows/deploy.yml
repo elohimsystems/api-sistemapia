@@ -88,6 +88,8 @@ jobs:
               --exclude .htaccess \
               --exclude .env \
               --exclude logs \
+              --exclude node_modules \
+              --exclude node_modules.zip \
               ./deploy-package/ ./;
             quit
           "
