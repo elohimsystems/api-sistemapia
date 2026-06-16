@@ -17,6 +17,13 @@ jobs:
 
       - run: npm ci
 
+      - name: Auto-increment version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          npm version patch --no-git-tag-version
+          echo "Nueva versión: $(node -p "require('./package.json').version")"
+
       - run: npm run build
 
       - name: Package for FTP
@@ -24,6 +31,7 @@ jobs:
           mkdir -p deploy-package
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
+          if [ -f config.json ]; then cp config.json deploy-package/; fi
 
       - name: Package node_modules
         run: |

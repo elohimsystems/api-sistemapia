@@ -440,6 +440,8 @@ export class DorsalesService {
           const c = inscrito.competidor;
           item.nombre = c ? `${c.nombre || ''} ${c.apellido || ''}`.trim() : '';
           item.sexo = c?.sexo || '';
+          item.emailpersonal = c?.emailpersonal || null;
+          item.email = c?.email || null;
           item.competencia = inscrito.competencia?.descripcion || '';
           item.categoria = inscrito.categoria?.descripcion || '';
           item.numero = inscrito.numero;

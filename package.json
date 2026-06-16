@@ -1,6 +1,6 @@
 {
    "name": "api-sistemapia",
-   "version": "0.0.1",
+   "version": "1.0.0",
    "description": "API SistemaPIA. Inserta inscripciones, pagos y competidores. Tambien actualiza competidores de ser necesario",
    "author": "ElohimSystemns",
    "private": true,
@@ -11,7 +11,7 @@
       "start": "ts-node src/main.ts",
       "start:dev": "nest start --watch",
       "start:debug": "nest start --debug --watch",
-      "start:prod": "node dist/main",
+      "start:prod": "node build/main",
       "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
       "test": "jest",
       "test:watch": "jest --watch",
