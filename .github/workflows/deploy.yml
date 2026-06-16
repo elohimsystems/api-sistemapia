@@ -79,10 +79,11 @@ jobs:
             set ftp:passive-mode on;
             set net:max-retries 2;
             set net:timeout 30;
-            mirror -R --verbose \
+            mirror -R --verbose --delete \
               --exclude .git \
               --exclude .htaccess \
               --exclude .env \
+              --exclude logs \
               ./deploy-package/ ./;
             quit
           "
