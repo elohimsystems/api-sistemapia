@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { AppService } from './app.service';
 import { APP_NAME, APP_VERSION, MIN_FLUTTER_VERSION } from './version';
+import { logger } from './logger';
 
 @Controller()
 export class AppController {
@@ -31,7 +32,7 @@ export class AppController {
         const contenido = readFileSync(ruta, 'utf-8');
         return JSON.parse(contenido);
       } catch (e) {
-        console.error(`Error al leer config.json:`, (e as Error).message);
+        logger.error(`Error al leer config.json: ${(e as Error).message}`);
       }
     }
     return {
