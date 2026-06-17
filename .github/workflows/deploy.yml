@@ -31,7 +31,6 @@ jobs:
           mkdir -p deploy-package
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
-          if [ -f config.json ]; then cp config.json deploy-package/; fi
           if [ -d deploy-package/src ]; then
             cp -r deploy-package/src/. deploy-package/
             rm -rf deploy-package/src
@@ -91,6 +90,7 @@ jobs:
               --exclude node_modules \
               --exclude node_modules.zip \
               --exclude uploads \
+              --exclude config.json \
               ./deploy-package/ ./;
             quit
           "
