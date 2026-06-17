@@ -20,6 +20,6 @@ export class DorsalImagen {
   @Column('timestamp without time zone', { name: 'generado_el', default: () => 'NOW()' })
   generadoEl: Date;
 
-  @Column('boolean', { name: 'enviado', default: false })
-  enviado: boolean;
+  @Column('boolean', { name: 'enviado', nullable: true })
+  enviado: boolean | null;
 }

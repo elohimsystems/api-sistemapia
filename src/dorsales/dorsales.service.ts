@@ -542,7 +542,7 @@ export class DorsalesService {
     try {
       const img = await this.imagenRepo.findOne({ where: { id } });
       if (!img) return { id, success: false, error: 'Dorsal no encontrado' };
-      if (img.enviado) return { id, success: false, error: 'El dorsal ya fue enviado anteriormente' };
+      if (img.enviado === true) return { id, success: false, error: 'El dorsal ya fue enviado anteriormente' };
 
       const inscrito = await this.inscritoRepo.findOne({
         where: { id: String(img.idinscrito) },
@@ -569,8 +569,10 @@ export class DorsalesService {
         await this.imagenRepo.update(id, { enviado: true });
         return { id, success: true };
       }
+      await this.imagenRepo.update(id, { enviado: false });
       return { id, success: false, error: 'Error al enviar el correo' };
     } catch (e: any) {
+      await this.imagenRepo.update(id, { enviado: false }).catch(() => {});
       return { id, success: false, error: e.message || 'Error desconocido' };
     }
   }
