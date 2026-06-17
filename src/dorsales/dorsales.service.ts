@@ -456,7 +456,7 @@ export class DorsalesService {
   async desmarcarEnviado(id: number): Promise<{ id: number }> {
     const img = await this.imagenRepo.findOne({ where: { id } });
     if (!img) throw new NotFoundException('Dorsal no encontrado');
-    img.enviado = false;
+    img.enviado = null;
     await this.imagenRepo.save(img);
     return { id };
   }
