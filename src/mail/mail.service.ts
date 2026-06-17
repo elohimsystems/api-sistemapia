@@ -8,22 +8,30 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
 
   constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_PORT === '465',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      pool: true,
-      maxConnections: 3,
-      rateDelta: 2000,
-      rateLimit: 5,
-      tls: { rejectUnauthorized: false },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-    });
+    if (process.env.MAIL_DRIVER === 'sendmail') {
+      this.transporter = nodemailer.createTransport({
+        sendmail: true,
+        newline: 'unix',
+        path: '/usr/sbin/sendmail',
+      });
+    } else {
+      this.transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_PORT === '465',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+        pool: true,
+        maxConnections: 3,
+        rateDelta: 2000,
+        rateLimit: 5,
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+      });
+    }
   }
 
   async sendDorsalEmail(
