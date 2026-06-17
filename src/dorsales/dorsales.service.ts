@@ -507,7 +507,7 @@ export class DorsalesService {
     message: string,
   ): Promise<void> {
     task.status = 'processing';
-    const CONCURRENCY = 15;
+    const CONCURRENCY = 5;
 
     for (let i = 0; i < ids.length; i += CONCURRENCY) {
       const batch = ids.slice(i, i + CONCURRENCY);
