@@ -1,19 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import * as sgMail from '@sendgrid/mail';
 import { mailLogger } from './mail-logger';
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter | null = null;
   private readonly logger = new Logger(MailService.name);
+  private readonly driver: string;
 
   constructor() {
-    if (process.env.MAIL_DRIVER === 'sendmail') {
+    this.driver = (process.env.MAIL_DRIVER || 'smtp').toLowerCase();
+    if (this.driver === 'sendmail') {
       this.transporter = nodemailer.createTransport({
         sendmail: true,
         newline: 'unix',
         path: '/usr/sbin/sendmail',
       });
+    } else if (this.driver === 'sendgrid') {
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
     } else {
       this.transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
@@ -44,20 +49,38 @@ export class MailService {
     const from = process.env.SMTP_FROM;
     this.logger.log(`Enviando email a ${to} asunto: ${subject}`);
     try {
-      const info = await this.transporter.sendMail({
-        from,
-        to,
-        subject,
-        text,
-        attachments: [{ filename: imageName, content: imageBuffer }],
-      });
-      this.logger.log(`Email enviado a ${to}: ${info.messageId}`);
-      mailLogger.info(`Email enviado a ${to}`, { messageId: info.messageId, subject });
+      if (this.driver === 'sendgrid') {
+        const msg = {
+          to,
+          from: from || '',
+          subject,
+          text,
+          attachments: [{
+            content: imageBuffer.toString('base64'),
+            filename: imageName,
+            type: 'image/jpeg' as const,
+            disposition: 'attachment' as const,
+          }],
+        };
+        await sgMail.send(msg);
+        this.logger.log(`Email enviado a ${to} via SendGrid`);
+        mailLogger.info(`Email enviado a ${to}`, { driver: 'sendgrid', subject });
+      } else {
+        const info = await this.transporter!.sendMail({
+          from,
+          to,
+          subject,
+          text,
+          attachments: [{ filename: imageName, content: imageBuffer }],
+        });
+        this.logger.log(`Email enviado a ${to}: ${info.messageId}`);
+        mailLogger.info(`Email enviado a ${to}`, { messageId: info.messageId, subject });
+      }
       return true;
     } catch (error) {
-      const msg = `Error al enviar email a ${to}: ${error.message}`;
+      const msg = `Error al enviar email a ${to}: ${(error as Error).message}`;
       this.logger.error(msg);
-      mailLogger.error(msg, { to, subject, error: error.stack });
+      mailLogger.error(msg, { to, subject, error: (error as Error).stack });
       return false;
     }
   }
