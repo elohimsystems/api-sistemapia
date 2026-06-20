@@ -2,7 +2,7 @@ name: Deploy API
 
 on:
   push:
-    branches: [main, master]
+    branches: [develop, main, master]
 
 jobs:
   build:
@@ -17,6 +17,13 @@ jobs:
 
       - run: npm ci
 
+      - name: Auto-increment version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          npm version patch --no-git-tag-version
+          echo "Nueva versión: $(node -p "require('./package.json').version")"
+
       - run: npm run build
 
       - name: Package for FTP
@@ -24,6 +31,10 @@ jobs:
           mkdir -p deploy-package
           cp -r build/. deploy-package/
           cp package.json package-lock.json deploy-package/
+          if [ -d deploy-package/src ]; then
+            cp -r deploy-package/src/. deploy-package/
+            rm -rf deploy-package/src
+          fi
 
       - name: Package node_modules
         run: |
@@ -34,28 +45,60 @@ jobs:
           name: node_modules
           path: node_modules.zip
 
+      - name: Test FTP connection
+        env:
+          FTP_USERNAME: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_USERNAME_PROD || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_PASSWORD_PROD || secrets.FTP_PASSWORD }}
+          FTP_HOST: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_HOST_PROD || secrets.FTP_HOST }}
+        run: |
+          echo "Resolviendo host..."
+          nslookup $FTP_HOST || dig $FTP_HOST || host $FTP_HOST
+          echo "Probando conexión puerto 21..."
+          timeout 10 nc -vz $FTP_HOST 21 || echo "nc falló"
+          echo "DNS y conectividad listos"
+
       - name: Deploy via FTP
         env:
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME_PROD }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD_PROD }}
-          FTP_HOST: ${{ secrets.FTP_HOST_PROD }}
+          IS_PROD: ${{ github.ref_name == 'main' || github.ref_name == 'master' }}
+          FTP_USERNAME: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_USERNAME_PROD || secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_PASSWORD_PROD || secrets.FTP_PASSWORD }}
+          FTP_HOST: ${{ (github.ref_name == 'main' || github.ref_name == 'master') && secrets.FTP_HOST_PROD || secrets.FTP_HOST }}
         run: |
+          echo "Desplegando a $([ $IS_PROD = true ] && echo 'PRODUCCIÓN' || echo 'DESARROLLO')..."
           sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+          lftp -d -c "
+            open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
+            set ftp:ssl-allow no;
+            set ftp:passive-mode on;
+            set net:max-retries 2;
+            set net:timeout 30;
+            ls;
+            quit
+          "
+          echo "--- Conexión OK, iniciando mirror ---"
           lftp -c "
             open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
             set ftp:ssl-allow no;
             set ftp:passive-mode on;
-            set net:max-retries 3;
-            mirror -R --verbose \
+            set net:max-retries 2;
+            set net:timeout 30;
+            mirror -R --verbose --delete \
               --exclude .git \
               --exclude .htaccess \
+              --exclude .env \
+              --exclude logs \
+              --exclude node_modules \
+              --exclude node_modules.zip \
+              --exclude uploads \
+              --exclude config.json \
               ./deploy-package/ ./;
             quit
           "
           NODE_EXISTS=$(lftp -c "
             open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
             set ftp:ssl-allow no;
-            set net:max-retries 3;
+            set net:max-retries 2;
+            set net:timeout 30;
             cls -1 --list node_modules/ 2>/dev/null | head -1;
             quit
           ")
@@ -65,7 +108,8 @@ jobs:
               open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST;
               set ftp:ssl-allow no;
               set ftp:passive-mode on;
-              set net:max-retries 3;
+              set net:max-retries 2;
+              set net:timeout 30;
               put -O ./ node_modules.zip;
               quit
             "

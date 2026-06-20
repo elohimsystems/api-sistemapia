@@ -5,3 +5,6 @@ build/
 dist/
 tmp/
 temp/
+.env
+config.json
+uploads/

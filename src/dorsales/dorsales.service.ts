@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { join } from 'path';
@@ -7,15 +7,28 @@ import * as sharp from 'sharp';
 import { DorsalConfig, DorsalImagen, DorsalBaseImagen } from './entities';
 import { CreateDorsalConfigDto } from './dto/create-dorsal-config.dto';
 import { Inscrito } from '../inscritos/entities/inscrito.entity';
+import { MailService } from '../mail/mail.service';
 
 const opentype = require('opentype.js');
 const wawoff2 = require('wawoff2');
 
+interface EmailTask {
+  id: string;
+  status: 'pending' | 'processing' | 'completed';
+  total: number;
+  enviados: number;
+  fallidos: { id: number; error: string }[];
+  createdAt: Date;
+}
+
 @Injectable()
 export class DorsalesService {
+  private readonly emailTasks = new Map<string, EmailTask>();
+  private taskCounter = 0;
   private readonly uploadDir: string;
   private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
   private font: any = null;
+  private readonly logger = new Logger(DorsalesService.name);
 
   constructor(
     @InjectRepository(DorsalConfig)
@@ -26,6 +39,7 @@ export class DorsalesService {
     private readonly imagenRepo: Repository<DorsalImagen>,
     @InjectRepository(Inscrito)
     private readonly inscritoRepo: Repository<Inscrito>,
+    private readonly mailService: MailService,
   ) {
     this.uploadDir = join(process.cwd(), 'uploads', 'dorsales');
     if (!existsSync(this.uploadDir)) mkdirSync(this.uploadDir, { recursive: true });
@@ -417,7 +431,7 @@ export class DorsalesService {
         await this.imagenRepo.remove(img);
         continue;
       }
-      const item: any = { id: img.id, iddocumento: img.iddocumento };
+      const item: any = { id: img.id, iddocumento: img.iddocumento, enviado: img.enviado };
       try {
         const inscrito = await this.inscritoRepo.findOne({
           where: { id: String(img.idinscrito) },
@@ -427,6 +441,8 @@ export class DorsalesService {
           const c = inscrito.competidor;
           item.nombre = c ? `${c.nombre || ''} ${c.apellido || ''}`.trim() : '';
           item.sexo = c?.sexo || '';
+          item.emailpersonal = c?.emailpersonal || null;
+          item.email = c?.email || null;
           item.competencia = inscrito.competencia?.descripcion || '';
           item.categoria = inscrito.categoria?.descripcion || '';
           item.numero = inscrito.numero;
@@ -435,6 +451,130 @@ export class DorsalesService {
       result.push(item);
     }
     return result;
+  }
+
+  async desmarcarEnviado(id: number): Promise<{ id: number }> {
+    const img = await this.imagenRepo.findOne({ where: { id } });
+    if (!img) throw new NotFoundException('Dorsal no encontrado');
+    img.enviado = null;
+    await this.imagenRepo.save(img);
+    return { id };
+  }
+
+  getEmailTaskStatus(taskId: string): EmailTask {
+    const task = this.emailTasks.get(taskId);
+    if (!task) throw new NotFoundException('Task no encontrada');
+    return task;
+  }
+
+  async enviarTodos(
+    idevento: number,
+    subject: string,
+    message: string,
+  ): Promise<{ task_id: string }> {
+    const dorsales = await this.imagenRepo.find({ where: { idevento } });
+    const ids = dorsales.map(d => d.id);
+    return this.enviarEmail(ids, subject, message);
+  }
+
+  async enviarEmail(
+    dorsalIds: number[],
+    subject: string,
+    message: string,
+  ): Promise<{ task_id: string }> {
+    const taskId = `email_${Date.now()}_${++this.taskCounter}`;
+    const task: EmailTask = {
+      id: taskId,
+      status: 'pending',
+      total: dorsalIds.length,
+      enviados: 0,
+      fallidos: [],
+      createdAt: new Date(),
+    };
+    this.emailTasks.set(taskId, task);
+
+    this.processEmailBatch(task, dorsalIds, subject, message).catch(err => {
+      this.logger.error(`Error crítico en envío batch: ${err.message}`, err.stack);
+    });
+
+    return { task_id: taskId };
+  }
+
+  private async processEmailBatch(
+    task: EmailTask,
+    ids: number[],
+    subject: string,
+    message: string,
+  ): Promise<void> {
+    task.status = 'processing';
+    const CONCURRENCY = 5;
+
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const batch = ids.slice(i, i + CONCURRENCY);
+
+      const results = await Promise.allSettled(
+        batch.map(id => this.sendSingleDorsal(id, subject, message)),
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          if (result.value.success) {
+            task.enviados++;
+          } else {
+            task.fallidos.push({ id: result.value.id, error: result.value.error });
+          }
+        }
+      }
+
+      if (i + CONCURRENCY < ids.length) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
+    task.status = 'completed';
+  }
+
+  private async sendSingleDorsal(
+    id: number,
+    subject: string,
+    message: string,
+  ): Promise<{ id: number; success: boolean; error?: string }> {
+    try {
+      const img = await this.imagenRepo.findOne({ where: { id } });
+      if (!img) return { id, success: false, error: 'Dorsal no encontrado' };
+      if (img.enviado === true) return { id, success: false, error: 'El dorsal ya fue enviado anteriormente' };
+
+      const inscrito = await this.inscritoRepo.findOne({
+        where: { id: String(img.idinscrito) },
+        relations: ['competidor'],
+      });
+      if (!inscrito) return { id, success: false, error: 'Inscrito no encontrado' };
+
+      const email = inscrito.competidor?.emailpersonal || inscrito.competidor?.email;
+      if (!email) return { id, success: false, error: 'El participante no tiene email registrado' };
+      if (!existsSync(img.rutaImagen)) return { id, success: false, error: 'Archivo de imagen no encontrado' };
+
+      const buffer = readFileSync(img.rutaImagen);
+      const nombre = `${inscrito.competidor?.nombre || ''} ${inscrito.competidor?.apellido || ''}`.trim() || 'Participante';
+
+      const ok = await this.mailService.sendDorsalEmail(
+        email,
+        subject,
+        `${message}\n\n---\nNombre: ${nombre}\nDocumento: ${img.iddocumento}`,
+        buffer,
+        `dorsal_${img.iddocumento}.jpg`,
+      );
+
+      if (ok) {
+        await this.imagenRepo.update(id, { enviado: true });
+        return { id, success: true };
+      }
+      await this.imagenRepo.update(id, { enviado: false });
+      return { id, success: false, error: 'Error al enviar el correo' };
+    } catch (e: any) {
+      await this.imagenRepo.update(id, { enviado: false }).catch(() => {});
+      return { id, success: false, error: e.message || 'Error desconocido' };
+    }
   }
 
   async obtenerImagen(id: number): Promise<DorsalImagen> {

@@ -22,10 +22,28 @@ export class InscritosService {
     });
   }
 
-  async findByEvento(idevento: number): Promise<Inscrito[]> {
-    return await this.inscritoRepository.find({
-      where: { idevento: String(idevento) },
+  async findByEvento(idevento: number): Promise<any[]> {
+    const inscritos = await this.inscritoRepository.find({
+      where: { evento: { id: idevento } },
       relations: ['competidor', 'evento', 'competencia', 'categoria', 'pagos'],
+    });
+    return inscritos.filter(i => i.status === 1).map(i => {
+      const conciliado = (i.pagos || []).some(p => p.conciliado === true);
+      const estatus = i.status === 1
+        ? (conciliado ? 'Inscrito' : 'Preinscrito')
+        : '';
+      return {
+        id: i.id,
+        numero: i.numero,
+        fechahora: i.fechahora,
+        status: i.status,
+        notificado: i.notificado,
+        competidor: i.competidor,
+        competencia: i.competencia,
+        categoria: i.categoria,
+        evento: i.evento,
+        estatus,
+      };
     });
   }
 
