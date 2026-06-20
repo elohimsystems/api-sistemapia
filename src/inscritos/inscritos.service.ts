@@ -22,18 +22,18 @@ export class InscritosService {
     });
   }
 
-  async findByEvento(idevento: number): Promise<Inscrito[]> {
-    return await this.inscritoRepository
-      .createQueryBuilder('inscrito')
-      .leftJoinAndSelect('inscrito.competidor', 'competidor')
-      .leftJoinAndSelect('inscrito.evento', 'evento')
-      .leftJoinAndSelect('inscrito.competencia', 'competencia')
-      .leftJoinAndSelect('inscrito.categoria', 'categoria')
-      .leftJoinAndSelect('inscrito.pagos', 'pagos')
-      .where('inscrito.idevento = :idevento', { idevento: String(idevento) })
-      .andWhere('inscrito.status = 1')
-      .andWhere('pagos.conciliado = true')
-      .getMany();
+  async findByEvento(idevento: number): Promise<any[]> {
+    const inscritos = await this.inscritoRepository.find({
+      where: { idevento: String(idevento) },
+      relations: ['competidor', 'evento', 'competencia', 'categoria', 'pagos'],
+    });
+    return inscritos.map(i => {
+      const conciliado = (i.pagos || []).some(p => p.conciliado === true);
+      let estatus = '';
+      if (i.status === 1 && !conciliado) estatus = 'Preinscrito';
+      else if (i.status === 1 && conciliado) estatus = 'Inscrito';
+      return { ...i, estatus, pagos: undefined };
+    });
   }
 
   async findOne(id: number): Promise<Inscrito> {
