@@ -24,7 +24,7 @@ export class InscritosService {
 
   async findByEvento(idevento: number): Promise<any[]> {
     const inscritos = await this.inscritoRepository.find({
-      where: { idevento: String(idevento) },
+      where: { evento: { id: idevento } },
       relations: ['competidor', 'evento', 'competencia', 'categoria', 'pagos'],
     });
     return inscritos.map(i => {
