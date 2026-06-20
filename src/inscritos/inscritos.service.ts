@@ -27,7 +27,7 @@ export class InscritosService {
       where: { evento: { id: idevento } },
       relations: ['competidor', 'evento', 'competencia', 'categoria', 'pagos'],
     });
-    return inscritos.map(i => {
+    return inscritos.filter(i => i.status === 1).map(i => {
       const conciliado = (i.pagos || []).some(p => p.conciliado === true);
       const estatus = i.status === 1
         ? (conciliado ? 'Inscrito' : 'Preinscrito')
