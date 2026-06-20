@@ -29,10 +29,21 @@ export class InscritosService {
     });
     return inscritos.map(i => {
       const conciliado = (i.pagos || []).some(p => p.conciliado === true);
-      let estatus = '';
-      if (i.status === 1 && !conciliado) estatus = 'Preinscrito';
-      else if (i.status === 1 && conciliado) estatus = 'Inscrito';
-      return { ...i, estatus, pagos: undefined };
+      const estatus = i.status === 1
+        ? (conciliado ? 'Inscrito' : 'Preinscrito')
+        : '';
+      return {
+        id: i.id,
+        numero: i.numero,
+        fechahora: i.fechahora,
+        status: i.status,
+        notificado: i.notificado,
+        competidor: i.competidor,
+        competencia: i.competencia,
+        categoria: i.categoria,
+        evento: i.evento,
+        estatus,
+      };
     });
   }
 
