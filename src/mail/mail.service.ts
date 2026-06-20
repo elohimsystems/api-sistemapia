@@ -46,33 +46,36 @@ export class MailService {
     imageBuffer: Buffer,
     imageName: string,
   ): Promise<boolean> {
+    return this.sendEmail(to, subject, text, { buffer: imageBuffer, filename: imageName });
+  }
+
+  async sendEmail(
+    to: string,
+    subject: string,
+    text: string,
+    attachment?: { buffer: Buffer; filename: string },
+  ): Promise<boolean> {
     const from = process.env.SMTP_FROM;
     this.logger.log(`Enviando email a ${to} asunto: ${subject}`);
     try {
       if (this.driver === 'sendgrid') {
-        const msg = {
-          to,
-          from: from || '',
-          subject,
-          text,
-          attachments: [{
-            content: imageBuffer.toString('base64'),
-            filename: imageName,
-            type: 'image/jpeg' as const,
+        const msg: any = { to, from: from || '', subject, text };
+        if (attachment) {
+          msg.attachments = [{
+            content: attachment.buffer.toString('base64'),
+            filename: attachment.filename,
             disposition: 'attachment' as const,
-          }],
-        };
+          }];
+        }
         await sgMail.send(msg);
         this.logger.log(`Email enviado a ${to} via SendGrid`);
         mailLogger.info(`Email enviado a ${to}`, { driver: 'sendgrid', subject });
       } else {
-        const info = await this.transporter!.sendMail({
-          from,
-          to,
-          subject,
-          text,
-          attachments: [{ filename: imageName, content: imageBuffer }],
-        });
+        const mailOpts: any = { from, to, subject, text };
+        if (attachment) {
+          mailOpts.attachments = [{ filename: attachment.filename, content: attachment.buffer }];
+        }
+        const info = await this.transporter!.sendMail(mailOpts);
         this.logger.log(`Email enviado a ${to}: ${info.messageId}`);
         mailLogger.info(`Email enviado a ${to}`, { messageId: info.messageId, subject });
       }

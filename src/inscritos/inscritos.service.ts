@@ -23,10 +23,17 @@ export class InscritosService {
   }
 
   async findByEvento(idevento: number): Promise<Inscrito[]> {
-    return await this.inscritoRepository.find({
-      where: { idevento: String(idevento) },
-      relations: ['competidor', 'evento', 'competencia', 'categoria', 'pagos'],
-    });
+    return await this.inscritoRepository
+      .createQueryBuilder('inscrito')
+      .leftJoinAndSelect('inscrito.competidor', 'competidor')
+      .leftJoinAndSelect('inscrito.evento', 'evento')
+      .leftJoinAndSelect('inscrito.competencia', 'competencia')
+      .leftJoinAndSelect('inscrito.categoria', 'categoria')
+      .leftJoinAndSelect('inscrito.pagos', 'pagos')
+      .where('inscrito.idevento = :idevento', { idevento: String(idevento) })
+      .andWhere('inscrito.status = 1')
+      .andWhere('pagos.conciliado = true')
+      .getMany();
   }
 
   async findOne(id: number): Promise<Inscrito> {
