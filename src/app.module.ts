@@ -9,6 +9,8 @@ import { CategoriasModule } from './categorias/categorias.module';
 import { PagosModule } from './pagos/pagos.module';
 import { CompetenciasModule } from './competencias/competencias.module';
 import { DorsalesModule } from './dorsales/dorsales.module';
+import { MailModule } from './mail/mail.module';
+import { NotificacionesModule } from './notificaciones/notificaciones.module';
 
 @Module({
   imports: [
@@ -17,9 +19,9 @@ import { DorsalesModule } from './dorsales/dorsales.module';
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT, 10) || 5432,
-      username: process.env.DB_USER || 'sistem19',
-      password: process.env.DB_PASS || 'I4X7k33fpc',
-      database: process.env.DB_NAME || 'sistem19_bdpiav105',
+      username: process.env.DB_USER,
+      password: process.env.DB_PASS,
+      database: process.env.DB_NAME,
       autoLoadEntities: true,
       synchronize: process.env.DB_SYNC === 'true' || false,
     }),
@@ -29,6 +31,8 @@ import { DorsalesModule } from './dorsales/dorsales.module';
     PagosModule,
     CompetenciasModule,
     DorsalesModule,
+    MailModule,
+    NotificacionesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

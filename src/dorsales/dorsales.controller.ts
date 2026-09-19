@@ -123,6 +123,29 @@ export class DorsalesController {
     return this.dorsalesService.buscarPorDocumentoEnEvento(+idevento, iddocumento);
   }
 
+  @Post('enviar-email')
+  async enviarEmail(@Body() body: { ids: number[]; subject: string; message: string }) {
+    if (!body.ids?.length) throw new BadRequestException('Debe enviar un arreglo de ids');
+    if (!body.subject) throw new BadRequestException('Debe enviar un subject');
+    return this.dorsalesService.enviarEmail(body.ids, body.subject, body.message || '');
+  }
+
+  @Post('enviar/:idevento')
+  async enviarTodos(@Param('idevento') idevento: string, @Body() body: { subject: string; message: string }) {
+    if (!body.subject) throw new BadRequestException('Debe enviar un subject');
+    return this.dorsalesService.enviarTodos(+idevento, body.subject, body.message || '');
+  }
+
+  @Get('email-task/:taskId')
+  getEmailTaskStatus(@Param('taskId') taskId: string) {
+    return this.dorsalesService.getEmailTaskStatus(taskId);
+  }
+
+  @Patch(':id/desmarcar-enviado')
+  async desmarcarEnviado(@Param('id') id: string) {
+    return this.dorsalesService.desmarcarEnviado(+id);
+  }
+
   @Get('listar/:idevento')
   async listarDorsales(@Param('idevento') idevento: string) {
     return this.dorsalesService.listarDorsales(+idevento);
