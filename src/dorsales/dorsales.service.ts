@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { join } from 'path';
-import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import * as sharp from 'sharp';
 import { DorsalConfig, DorsalImagen, DorsalBaseImagen } from './entities';
 import { CreateDorsalConfigDto } from './dto/create-dorsal-config.dto';
@@ -26,8 +26,10 @@ export class DorsalesService {
   private readonly emailTasks = new Map<string, EmailTask>();
   private taskCounter = 0;
   private readonly uploadDir: string;
-  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
+  private readonly fontsDir: string;
+  private readonly DFLT = { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'Roboto', fontWeight: 400, isItalic: false, fontColor: '#000000' };
   private font: any = null;
+  private readonly fontCache = new Map<string, any>();
   private readonly logger = new Logger(DorsalesService.name);
 
   constructor(
@@ -43,7 +45,23 @@ export class DorsalesService {
   ) {
     this.uploadDir = join(process.cwd(), 'uploads', 'dorsales');
     if (!existsSync(this.uploadDir)) mkdirSync(this.uploadDir, { recursive: true });
+
+    this.fontsDir = join(process.cwd(), 'fonts');
+    if (!existsSync(this.fontsDir)) mkdirSync(this.fontsDir, { recursive: true });
+
     this.cargarFont();
+  }
+
+  private async parseFontBuffer(buffer: Buffer): Promise<any> {
+    const isWoff2 = buffer.slice(0, 4).toString('ascii') === 'wOF2';
+    if (isWoff2) {
+      const decompressed = await wawoff2.decompress(buffer);
+      const arrayBuffer = decompressed.buffer.slice(decompressed.byteOffset, decompressed.byteOffset + decompressed.byteLength);
+      return opentype.parse(arrayBuffer);
+    } else {
+      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      return opentype.parse(arrayBuffer);
+    }
   }
 
   private cargarFont() {
@@ -53,9 +71,8 @@ export class DorsalesService {
         join(process.cwd(), 'node_modules', '@fontsource', 'roboto', 'files', 'roboto-latin-400-normal.woff2'),
       ]) {
         try {
-          const compressed = readFileSync(p);
-          const decompressed = await wawoff2.decompress(compressed);
-          this.font = opentype.parse(decompressed);
+          const rawBuffer = readFileSync(p);
+          this.font = await this.parseFontBuffer(rawBuffer);
           return;
         } catch {}
       }
@@ -63,43 +80,189 @@ export class DorsalesService {
     load().catch(() => {});
   }
 
-  private textToSvgPath(text: string, x: number, y: number, fontSize: number, fontColor: string): string {
-    if (!this.font) {
+  private async obtenerFuente(
+    fontFamily?: string,
+    fontWeight: number | string = 400,
+    isItalic: boolean | string = false,
+  ): Promise<any> {
+    const family = (fontFamily || 'Roboto').trim();
+    const weight = Number(fontWeight) || 400;
+    const italic = isItalic === true || isItalic === 'true' || isItalic === '1';
+
+    const slug = family.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cacheKey = `${slug}_${weight}_${italic ? 'italic' : 'normal'}`;
+
+    if (this.fontCache.has(cacheKey)) {
+      return this.fontCache.get(cacheKey);
+    }
+
+    const fileName = `${cacheKey}.font`;
+    const filePath = join(this.fontsDir, fileName);
+
+    // 1. Si existe en disco
+    if (existsSync(filePath)) {
+      try {
+        const rawBuffer = readFileSync(filePath);
+        const fontObj = await this.parseFontBuffer(rawBuffer);
+        const testG = fontObj.charToGlyph('A');
+        if (testG && testG.name !== '.notdef' && testG.index !== 0) {
+          this.fontCache.set(cacheKey, fontObj);
+          return fontObj;
+        }
+        this.logger.warn(`Fuente local ${fileName} incompleta o no válida, re-descargando...`);
+      } catch (e: any) {
+        this.logger.warn(`Error al leer fuente local ${fileName}: ${e.message}`);
+      }
+    }
+
+    // 2. Intentar descargar desde Google Fonts CSS API
+    try {
+      const fontUrl = await this.fetchGoogleFontUrl(family, weight, italic);
+      if (fontUrl) {
+        const fontBuffer = await this.downloadBuffer(fontUrl);
+        writeFileSync(filePath, fontBuffer);
+
+        const fontObj = await this.parseFontBuffer(fontBuffer);
+        this.fontCache.set(cacheKey, fontObj);
+        this.logger.log(`Fuente Google descargada y en caché: ${cacheKey}`);
+        return fontObj;
+      }
+    } catch (e: any) {
+      this.logger.warn(`No se pudo descargar Google Font ${family} (${weight}, ${italic}): ${e.message}`);
+    }
+
+    // 3. Fallback
+    return this.font;
+  }
+
+  private fetchGoogleFontUrl(family: string, weight: number, italic: boolean): Promise<string | null> {
+    return new Promise((resolve) => {
+      const https = require('https');
+      const urlParam = italic
+        ? `family=${encodeURIComponent(family)}:ital,wght@1,${weight}`
+        : `family=${encodeURIComponent(family)}:wght@${weight}`;
+
+      const url = `https://fonts.googleapis.com/css2?${urlParam}`;
+
+      const options = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      };
+
+      https.get(url, options, (res: any) => {
+        if (res.statusCode !== 200) {
+          this.logger.warn(`Google Fonts API devolvió HTTP ${res.statusCode} para ${family} (wght=${weight}, italic=${italic})`);
+          if (weight !== 400) {
+            this.fetchGoogleFontUrl(family, 400, italic).then(resolve);
+            return;
+          }
+          if (italic) {
+            this.fetchGoogleFontUrl(family, weight, false).then(resolve);
+            return;
+          }
+          resolve(null);
+          return;
+        }
+        let data = '';
+        res.on('data', (chunk: any) => (data += chunk));
+        res.on('end', () => {
+          const latinMatch = data.match(/\/\*\s*latin\s*\*\/[\s\S]*?url\((https:\/\/[^)]+)\)/);
+          if (latinMatch && latinMatch[1]) {
+            resolve(latinMatch[1]);
+            return;
+          }
+          const match = data.match(/url\((https:\/\/[^)]+)\)/);
+          resolve(match ? match[1] : null);
+        });
+      }).on('error', (err: any) => {
+        this.logger.warn(`Error de red al conectar con Google Fonts: ${err?.message}`);
+        resolve(null);
+      });
+    });
+  }
+
+  private downloadBuffer(url: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const https = require('https');
+      https.get(url, (res: any) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Status HTTP ${res.statusCode}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      }).on('error', (err: any) => reject(err));
+    });
+  }
+
+  private textToSvgPath(
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    fontColor: string,
+    fontObj?: any,
+  ): string {
+    const font = fontObj || this.font;
+    if (!font) {
       return `<text x="${x}" y="${y}" font-size="${fontSize}" font-family="sans-serif" fill="${fontColor}" text-anchor="middle">${this.escapeXml(text)}</text>`;
     }
 
-    const scale = (1 / this.font.unitsPerEm) * fontSize;
-    const glyphs: any[] = [];
-    let totalWidth = 0;
-    for (const ch of text) {
-      const g = this.font.charToGlyph(ch);
-      glyphs.push(g);
-      if (g.advanceWidth) totalWidth += g.advanceWidth * scale;
-    }
+    try {
+      const totalWidth = font.getAdvanceWidth(text, fontSize);
+      const startX = x - totalWidth / 2;
 
-    let cursorX = x - totalWidth / 2;
-    const paths: string[] = [];
-    for (const g of glyphs) {
-      const p = g.getPath(cursorX, y, fontSize);
-      if (p.commands.length > 0) {
-        const svg = p.toSVG(2);
-        paths.push(svg.replace('<path', '<path fill="' + fontColor + '"'));
-      }
-      if (g.advanceWidth) cursorX += g.advanceWidth * scale;
-    }
+      const paths: string[] = [];
+      font.forEachGlyph(text, startX, y, fontSize, {}, (glyph: any, gx: number, gy: number) => {
+        let g = glyph;
+        if ((!g || g.name === '.notdef' || g.index === 0) && this.font) {
+          const char = g.unicode ? String.fromCharCode(g.unicode) : '';
+          if (char) {
+            const fallbackG = this.font.charToGlyph(char);
+            if (fallbackG && fallbackG.name !== '.notdef' && fallbackG.index !== 0) {
+              g = fallbackG;
+            }
+          }
+        }
+        if (!g || g.name === '.notdef' || g.index === 0) return;
 
-    return paths.join('\n');
+        const p = g.getPath(gx, gy, fontSize);
+        if (p.commands && p.commands.length > 0) {
+          const svg = p.toSVG(2);
+          paths.push(svg.replace('<path', '<path fill="' + fontColor + '"'));
+        }
+      });
+
+      return paths.join('\n');
+    } catch (e) {
+      return `<text x="${x}" y="${y}" font-size="${fontSize}" font-family="sans-serif" fill="${fontColor}" text-anchor="middle">${this.escapeXml(text)}</text>`;
+    }
   }
 
   private async overlayText(
     imageBuffer: Buffer,
-    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+    items: {
+      text: string;
+      x: number;
+      y: number;
+      fontSize: number;
+      fontColor: string;
+      fontFamily?: string;
+      fontWeight?: number | string;
+      isItalic?: boolean | string;
+    }[],
   ): Promise<Buffer> {
     const metadata = await sharp(imageBuffer).metadata();
     const imgWidth = metadata.width || 800;
     const imgHeight = metadata.height || 600;
 
-    const paths = items.map(l => this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor)).join('\n');
+    const pathPromises = items.map(async l => {
+      const fontObj = await this.obtenerFuente(l.fontFamily, l.fontWeight, l.isItalic);
+      return this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor, fontObj);
+    });
+    const paths = (await Promise.all(pathPromises)).join('\n');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${paths}</svg>`;
 
     return sharp(imageBuffer)
@@ -110,14 +273,27 @@ export class DorsalesService {
 
   private async overlayTextToFile(
     imageBuffer: Buffer,
-    items: { text: string; x: number; y: number; fontSize: number; fontColor: string }[],
+    items: {
+      text: string;
+      x: number;
+      y: number;
+      fontSize: number;
+      fontColor: string;
+      fontFamily?: string;
+      fontWeight?: number | string;
+      isItalic?: boolean | string;
+    }[],
     outputPath: string,
   ): Promise<void> {
     const metadata = await sharp(imageBuffer).metadata();
     const imgWidth = metadata.width || 800;
     const imgHeight = metadata.height || 600;
 
-    const paths = items.map(l => this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor)).join('\n');
+    const pathPromises = items.map(async l => {
+      const fontObj = await this.obtenerFuente(l.fontFamily, l.fontWeight, l.isItalic);
+      return this.textToSvgPath(l.text, l.x, l.y, l.fontSize, l.fontColor, fontObj);
+    });
+    const paths = (await Promise.all(pathPromises)).join('\n');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${imgHeight}">${paths}</svg>`;
 
     await sharp(imageBuffer)
@@ -204,13 +380,23 @@ export class DorsalesService {
     baseImg: DorsalBaseImagen,
     campo: string,
     globalDefaults: Record<string, any>,
-  ): { posicionX: number; posicionY: number; fontSize: number; fontFamily: string; fontColor: string } {
+  ): {
+    posicionX: number;
+    posicionY: number;
+    fontSize: number;
+    fontFamily: string;
+    fontWeight: number | string;
+    isItalic: boolean;
+    fontColor: string;
+  } {
     const fc = baseImg.camposConfig?.[campo];
     return {
       posicionX: fc?.posicionX ?? globalDefaults.posicionX ?? this.DFLT.posicionX,
       posicionY: fc?.posicionY ?? globalDefaults.posicionY ?? this.DFLT.posicionY,
       fontSize: fc?.fontSize ?? globalDefaults.fontSize ?? this.DFLT.fontSize,
       fontFamily: fc?.fontFamily ?? globalDefaults.fontFamily ?? this.DFLT.fontFamily,
+      fontWeight: fc?.fontWeight ?? globalDefaults.fontWeight ?? this.DFLT.fontWeight,
+      isItalic: fc?.isItalic ?? globalDefaults.isItalic ?? this.DFLT.isItalic,
       fontColor: fc?.fontColor ?? globalDefaults.fontColor ?? this.DFLT.fontColor,
     };
   }
@@ -223,7 +409,7 @@ export class DorsalesService {
     if (deleteExisting) await this.imagenRepo.delete({ idevento });
 
     const config = await this.configRepo.findOne({ where: { idevento } });
-    const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'sans-serif', fontColor: '#000000' };
+    const defaults = config || { posicionX: 400, posicionY: 500, fontSize: 72, fontFamily: 'Roboto', fontWeight: 400, isItalic: false, fontColor: '#000000' };
 
     if (!inscritos.length) throw new NotFoundException(`No hay inscritos en evento #${idevento}`);
 
@@ -245,7 +431,7 @@ export class DorsalesService {
       if (!baseImg) continue;
 
       const campos = (baseImg.camposMostrar || 'numero').split(',').map(s => s.trim());
-      const imageBuffer = require('fs').readFileSync(baseImg.rutaImagen);
+      const imageBuffer = readFileSync(baseImg.rutaImagen);
 
       const lines: { text: string; y: number; cfg: ReturnType<typeof this.getFieldConfig> }[] = [];
 
@@ -291,8 +477,14 @@ export class DorsalesService {
       const outputPath = join(eventDir, outputName);
 
       await this.overlayTextToFile(imageBuffer, lines.map(l => ({
-        text: l.text, x: l.cfg.posicionX, y: l.y,
-        fontSize: l.cfg.fontSize, fontColor: l.cfg.fontColor,
+        text: l.text,
+        x: l.cfg.posicionX,
+        y: l.y,
+        fontSize: l.cfg.fontSize,
+        fontColor: l.cfg.fontColor,
+        fontFamily: l.cfg.fontFamily,
+        fontWeight: l.cfg.fontWeight,
+        isItalic: l.cfg.isItalic,
       })), outputPath);
 
       const docId = c?.iddocumento || '';
@@ -330,14 +522,30 @@ export class DorsalesService {
 
   async generarPreview(
     idbaseimagen: number,
-    camposConfig: { campo: string; posicionX: number; posicionY: number; fontSize: number; fontFamily: string; fontColor: string; valor: string }[],
+    camposConfig: {
+      campo: string;
+      posicionX: number;
+      posicionY: number;
+      fontSize: number;
+      fontFamily?: string;
+      fontWeight?: number | string;
+      isItalic?: boolean | string;
+      fontColor: string;
+      valor: string;
+    }[],
   ): Promise<Buffer> {
     const baseImg = await this.obtenerBaseImagen(idbaseimagen);
-    const imageBuffer = require('fs').readFileSync(baseImg.rutaImagen);
+    const imageBuffer = readFileSync(baseImg.rutaImagen);
 
     return this.overlayText(imageBuffer, camposConfig.map(fc => ({
-      text: fc.valor, x: fc.posicionX, y: fc.posicionY,
-      fontSize: fc.fontSize, fontColor: fc.fontColor,
+      text: fc.valor,
+      x: fc.posicionX,
+      y: fc.posicionY,
+      fontSize: fc.fontSize,
+      fontColor: fc.fontColor,
+      fontFamily: fc.fontFamily,
+      fontWeight: fc.fontWeight,
+      isItalic: fc.isItalic,
     })));
   }
 

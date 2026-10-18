@@ -6,7 +6,11 @@ import {
   Patch,
   Param,
   Delete,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
+import { createReadStream, existsSync } from 'fs';
+import { join } from 'path';
 import { EventosService } from './eventos.service';
 import { CreateEventoDto } from './dto/create-evento.dto';
 import { UpdateEventoDto } from './dto/update-evento.dto';
@@ -28,6 +32,39 @@ export class EventosController {
   @Get('activos')
   findActivos() {
     return this.eventosService.findActivos();
+  }
+
+  @Get('logo/:folder/:file')
+  async verLogoSubcarpeta(
+    @Param('folder') folder: string,
+    @Param('file') file: string,
+  ): Promise<StreamableFile> {
+    const candidates = [
+      join(process.cwd(), 'uploads', 'eventos', folder, file),
+      join(process.cwd(), 'uploads', 'logos', folder, file),
+      join(process.cwd(), 'uploads', folder, file),
+    ];
+    for (const path of candidates) {
+      if (existsSync(path)) {
+        return new StreamableFile(createReadStream(path), { type: 'image/jpeg' });
+      }
+    }
+    throw new NotFoundException('Logo de evento no encontrado');
+  }
+
+  @Get('logo/:file')
+  async verLogoArchivo(@Param('file') file: string): Promise<StreamableFile> {
+    const candidates = [
+      join(process.cwd(), 'uploads', 'eventos', file),
+      join(process.cwd(), 'uploads', 'logos', file),
+      join(process.cwd(), 'uploads', file),
+    ];
+    for (const path of candidates) {
+      if (existsSync(path)) {
+        return new StreamableFile(createReadStream(path), { type: 'image/jpeg' });
+      }
+    }
+    throw new NotFoundException('Logo de evento no encontrado');
   }
 
   @Get(':id')
