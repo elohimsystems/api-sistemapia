@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { CreateEventoDto } from './dto/create-evento.dto';
 import { UpdateEventoDto } from './dto/update-evento.dto';
 import { Evento } from './entities/evento.entity';
@@ -20,6 +22,38 @@ export class EventosService {
     @InjectRepository(Inscrito)
     private readonly inscritoRepository: Repository<Inscrito>,
   ) {}
+
+  private getRemoteBaseUrl(): string {
+    const candidatos = [join(process.cwd(), 'config.json')];
+    for (const ruta of candidatos) {
+      if (existsSync(ruta)) {
+        try {
+          const cfg = JSON.parse(readFileSync(ruta, 'utf-8'));
+          if (cfg.eventLogoRemoteBaseUrl) return cfg.eventLogoRemoteBaseUrl;
+        } catch {}
+      }
+    }
+    return 'https://www.sistemapia.com.ve/piaweb/web/bundles/fratersoftpiaweb/fine-uploader/files';
+  }
+
+  async fetchRemoteLogoImage(relativePath: string): Promise<Buffer | null> {
+    const baseUrl = this.getRemoteBaseUrl().replace(/\/+$/, '');
+    const cleanPath = relativePath.replace(/^\/+/, '');
+    const fullUrl = `${baseUrl}/${encodeURI(cleanPath)}`;
+
+    return new Promise((resolve) => {
+      const mod = fullUrl.startsWith('https') ? require('https') : require('http');
+      mod.get(fullUrl, (res: any) => {
+        if (res.statusCode !== 200) {
+          resolve(null);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      }).on('error', () => resolve(null));
+    });
+  }
 
   async getCompetenciasPorEvento(idevento: number) {
     return this.competenciaRepository.find({ where: { idevento } });

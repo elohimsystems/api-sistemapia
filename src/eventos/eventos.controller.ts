@@ -39,31 +39,52 @@ export class EventosController {
     @Param('folder') folder: string,
     @Param('file') file: string,
   ): Promise<StreamableFile> {
+    const decFolder = decodeURIComponent(folder);
+    const decFile = decodeURIComponent(file);
+
+    // 1. Verificar en disco local
     const candidates = [
-      join(process.cwd(), 'uploads', 'eventos', folder, file),
-      join(process.cwd(), 'uploads', 'logos', folder, file),
-      join(process.cwd(), 'uploads', folder, file),
+      join(process.cwd(), 'uploads', 'eventos', decFolder, decFile),
+      join(process.cwd(), 'uploads', 'logos', decFolder, decFile),
+      join(process.cwd(), 'uploads', decFolder, decFile),
     ];
     for (const path of candidates) {
       if (existsSync(path)) {
         return new StreamableFile(createReadStream(path), { type: 'image/jpeg' });
       }
     }
+
+    // 2. Obtener desde la URL remota del servidor configurada en config.json
+    const remoteBuffer = await this.eventosService.fetchRemoteLogoImage(`${decFolder}/${decFile}`);
+    if (remoteBuffer) {
+      return new StreamableFile(remoteBuffer, { type: 'image/jpeg' });
+    }
+
     throw new NotFoundException('Logo de evento no encontrado');
   }
 
   @Get('logo/:file')
   async verLogoArchivo(@Param('file') file: string): Promise<StreamableFile> {
+    const decFile = decodeURIComponent(file);
+
+    // 1. Verificar en disco local
     const candidates = [
-      join(process.cwd(), 'uploads', 'eventos', file),
-      join(process.cwd(), 'uploads', 'logos', file),
-      join(process.cwd(), 'uploads', file),
+      join(process.cwd(), 'uploads', 'eventos', decFile),
+      join(process.cwd(), 'uploads', 'logos', decFile),
+      join(process.cwd(), 'uploads', decFile),
     ];
     for (const path of candidates) {
       if (existsSync(path)) {
         return new StreamableFile(createReadStream(path), { type: 'image/jpeg' });
       }
     }
+
+    // 2. Obtener desde la URL remota del servidor configurada en config.json
+    const remoteBuffer = await this.eventosService.fetchRemoteLogoImage(decFile);
+    if (remoteBuffer) {
+      return new StreamableFile(remoteBuffer, { type: 'image/jpeg' });
+    }
+
     throw new NotFoundException('Logo de evento no encontrado');
   }
 

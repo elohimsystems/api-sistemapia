@@ -2,5 +2,6 @@
   "footerUrl": "https://www.sistemapia.com.ve",
   "footerText": "SistemaPIA",
   "poweredByText": "Powered by",
-  "showEnviarTodos": true
+  "showEnviarTodos": true,
+  "eventLogoRemoteBaseUrl": "https://www.sistemapia.com.ve/piaweb/web/bundles/fratersoftpiaweb/fine-uploader/files"
 }
