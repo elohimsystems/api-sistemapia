@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { existsSync, readFileSync } from 'fs';
@@ -12,6 +12,8 @@ import { Inscrito } from '../inscritos/entities/inscrito.entity';
 
 @Injectable()
 export class EventosService {
+  private readonly logger = new Logger(EventosService.name);
+
   constructor(
     @InjectRepository(Evento)
     private readonly eventoRepository: Repository<Evento>,
@@ -45,13 +47,17 @@ export class EventosService {
       const mod = fullUrl.startsWith('https') ? require('https') : require('http');
       mod.get(fullUrl, (res: any) => {
         if (res.statusCode !== 200) {
+          this.logger.error(`Logo de evento no encontrado (HTTP ${res.statusCode}): ${fullUrl}`);
           resolve(null);
           return;
         }
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => resolve(Buffer.concat(chunks)));
-      }).on('error', () => resolve(null));
+      }).on('error', (err: any) => {
+        this.logger.error(`Error de red al obtener logo de evento: ${err?.message} (${fullUrl})`);
+        resolve(null);
+      });
     });
   }
 
