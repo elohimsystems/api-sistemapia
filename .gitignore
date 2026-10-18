@@ -5,6 +5,8 @@ build/
 dist/
 tmp/
 temp/
+fonts/
 .env
 config.json
 uploads/
+logs/
