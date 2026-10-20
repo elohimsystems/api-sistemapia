@@ -3,5 +3,6 @@
   "footerText": "SistemaPIA",
   "poweredByText": "Powered by",
   "showEnviarTodos": true,
-  "eventLogoRemoteBaseUrl": "http://localhost/dev-piaweb/web/bundles/fratersoftpiaweb/fine-uploader/files"
+  "eventLogoRemoteBaseUrl": "http://localhost/dev-piaweb/web/bundles/fratersoftpiaweb/fine-uploader/files",
+  "companyUrl": "https://www.elohimsystems.com"
 }
